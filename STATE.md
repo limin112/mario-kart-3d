@@ -1,6 +1,6 @@
 # STATE — 项目状态（Pi 每轮迭代结束时更新）
 
-- 当前阶段：P11 发车位置修复（P0 紧急 bug）——展示舞台残留导致卡丁车出生在错误位置
+- 当前阶段：P13 完成 —— 下一步按 GUIDANCE 16:30 顺序进入 P16/P18（体验类），再 P14/P15/P17（内容类）
 - 已完成：
   - P1 脚手架 — index.html + importmap (three@0.160.0) + main.js；Three.js 场景（地面、天空渐变、半球光+方向光阴影）；盒子卡丁车（车身、座舱、4轮）；WASD/方向键控制（油门/刹车/转向）；街机式物理（加速/摩擦/转向随速度衰减/最大速度限制）；第三人称跟随镜头带平滑插值；HUD 显示速度/圈数/时间/最快圈/名次；验证通过：node --check 语法 OK，headless Chrome 零 console error
   - P2 赛道 — 样条赛道 (CatmullRom) + 路面网格 + 护栏 + 起点线 + 树木装饰 + 加速带；出界（草地）减速逻辑；检查点防切弯；验证通过：headless Chrome 零 console error，驾驶逻辑正常
@@ -23,6 +23,7 @@
   - P10 收尾打磨（静音 UI 两个遗留边缘问题，只改 touch.js）— ① 竖屏/高屏叠压：body 加 touch-ctrl class，#muteHint 让位下移 top:78px（横屏矮屏不适用，按钮仍走既有 top:60px、徽章留 20px，无回归）；② 图标失步：tc-mute 不再本地计数，改为任何来源 KeyM 后延迟一拍从 #muteHint .muted 读真值同步图标。验证：node --check OK；verify.js ok:true 零 error、drive 5km/h；playwright 专项（tools/verify/mute-sync-test.mjs 保留复用）：竖屏 390×844 零叠压、真键盘 m 往返按钮图标与徽章同步、点按钮徽章同步；横屏 844×390 不回归；零 error。重打 zip。
   - P11 发车位置修复（P0 紧急 bug）——修复三个关键问题：① track.js 起点线双重定位 bug（组位于 pt 但子元素又用世界坐标 pt，导致视觉起点线在 2×pt 处）；② main.js/ai.js 生成位置计算混淆 forward/leftNormal（将 startInfo.normal 误作左法线，实为前进切线）；③ showcaseScene 清理不彻底（GridHelper 等非 Mesh 未 dispose）。验证通过：node --check 全通过，verify.js ok:true 零 console/page error、--drive 速度 14 km/h。
   - P12 起点拱门挡道修复（GUIDANCE 16:30 新需求第一项）— 根因：track.js _createStartLine 组旋转多转了 PI/2（rotation.y=atan2(tx,tz)+PI/2 把局部 +X 转成了前进方向，代码注释写反），整个门（拱形管/立柱/条纹/旗帜）横竖轴颠倒，拱形管变成立在路面中央的竖直半环（即"发车位置的柱子"）；修复：组旋转改为 atan2(tx,tz)（局部 +X=横向、+Z=前进），去掉拱形管错误的 rotation.z=-PI/2 使其真正横跨路面（两端落在 ±14.5m 立柱上，路面半宽 12m）；6 面白旗改为沿拱形曲线悬挂（同时消除监工 14:03 提的"起点线附近白色半透明竖片"）；红白条纹现真正横跨 23.8m 路面。验证：node --check OK；verify.js ok:true 零 console/page error、--drive 10 km/h；新建专项探针 tools/verify/gate-probe.mjs（遍历 startLine.group 全部网格世界包围盒换算赛道坐标）：行车走廊（|横向|≤10m、|纵向|≤15m、高 0.15-3m）内零障碍，7 秒发车视角截图 shots/gate-p12-fixed-20261011.png；条纹抽查横向跨距 23.8m/纵向 0.6m。另：新建 scripts/push-github.py（GitHub git database API 推送，落实 15:35 铁律）。
-- 下一步：P13 修赛道边缘线（红白路肩）Z-fighting 闪烁（polygonOffset 或抬高 0.02-0.05），见 GUIDANCE 2026-10-11 16:30 新需求清单（P12→P13→P16/P18→P14/P15/P17）
+  - P13 修赛道边缘线 Z-fighting（GUIDANCE 16:30 新需求第二项）— 根因：红白路肩网格 y=0 与地面（500×500 Plane，y=0）完全共面→必然 Z-fighting；路面仅高地面 1cm、白边线仅高路面 1cm，在 near=0.1/far=1000 下远距也会闪。修复（只改 track.js）：① 路肩抬高到 y=0.04 + 材质 polygonOffset(factor -2, units -2) 双保险；② 路面材质加 polygonOffset(factor -1, units -1)；③ 白色边线抬到 y=0.06（路肩之上）；④ 加速带 0.025→0.05（顺手，同隐患）。验证：node --check OK；verify.js ok:true 零 console/page error、--drive 10 km/h；新建专项探针 tools/verify/curb-probe.mjs（保留复用）：几何检查路肩/边线/加速带高度与 polygonOffset 全部生效 + 7s 发车视角截图像素分析（下半屏红白条纹像素 red=24715/white=11295、沥青 357792、草地仅 11406，路肩真实渲染未被地面共面盖掉），ok:true 零 error；证据 shots/curb-p13-7s.png。已 push GitHub（commit 4bd48e6）。注：模型不支持看图，改用像素级探针代替目视。
+- 下一步：P16 开屏动画（马里奥赛车式 logo 大字 + 引擎轰鸣 + 倒计时，P7 展示保留但要更流畅），见 GUIDANCE 2026-10-11 16:30 顺序 P16/P18 → P14/P15/P17
 - 阻塞：无
-- 最后更新：2026-10-11 16:45 +08（P12 完成：起点拱门旋转 bug 修复，verify.js ok:true 零 error、--drive 10 km/h、gate-probe 行车走廊零障碍；新需求 P13 待做）
+- 最后更新：2026-10-11 16:55 +08（P13 完成：路肩/边线/加速带抬高+polygonOffset，verify.js ok:true 零 error、--drive 10 km/h、curb-probe 全绿；已 push GitHub；待做 P16）
