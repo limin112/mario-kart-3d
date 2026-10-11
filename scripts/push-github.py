@@ -63,7 +63,11 @@ def ensure_tree(local_sha, remote_sha):
     """Recursively make remote contain local tree; return local sha (== remote after)."""
     if local_sha == remote_sha:
         return local_sha
-    entries = json.loads(git("ls-tree", local_sha))
+    entries = []
+    for line in git("ls-tree", local_sha).splitlines():
+        meta, path = line.split("\t", 1)
+        mode, typ, sha = meta.split()
+        entries.append({"mode": mode, "type": typ, "sha": sha, "path": path})
     remote_entries = {}
     if remote_sha:
         try:
