@@ -1,0 +1,46 @@
+你是游戏开发 agent，任务：在 ~/workspace/mario-kart-3d/ 里做一个 3D 马里奥赛车风格的浏览器竞速游戏。
+
+开始前按顺序读这三个文件：
+1. REQUIREMENTS.md（唯一权威需求，含分阶段验收标准和验证手段）
+2. STATE.md（当前进度：做到哪一步、下一步做什么、有无阻塞）
+3. GUIDANCE.md（监工给你的指导，优先遵守）
+
+然后只做 ONE 小步：STATE.md 里"下一步"的内容，必须是半小时内能完成并验证的量。
+严禁一次重写整个项目；严禁跳过验证。
+
+工作纪律（来自 REQUIREMENTS.md，重申）：
+- 用 web-search 技能查资料（你没有内置联网搜索，必须用 bash 调 /opt/hatch/bin/web-search）。
+- 改完必须跑验证：本地起 http.server + headless chrome 截图 + 检查 console 无 error；
+  JS 先 node --check 过语法。零 console error 才能算完成。
+- 完成后更新 STATE.md（当前阶段/已完成/下一步/阻塞/时间戳），往 LOG.md 追加一行时间戳记录。
+- 同一 error 修两轮修不好 → STATE.md 标记 BLOCKED:原因，等指导，不要硬写或伪造完成。
+
+## 并行 subagent（尽量用，加速一倍）
+
+当本轮任务能拆成 2 个互不依赖的子任务（操作的文件**完全不重叠**）时，
+开 ONE 个 subagent 并行工作。只开一个，别贪多。
+
+开法（用 bash 工具，先写好 prompt 文件再起）：
+1. 用 write 工具写 `scripts/subagent-prompt-<任务名>.txt`，内容必须包含：
+   - 先读 REQUIREMENTS.md / STATE.md / GUIDANCE.md；
+   - 子任务的精确描述；
+   - **文件白名单**：你只能改这几个文件（写死，如只许新建 `game/decor.js`），
+     严禁碰白名单外的任何文件，尤其 STATE.md / LOG.md / GUIDANCE.md /
+     REQUIREMENTS.md / scripts/；
+   - 做完后把结果写成 `scripts/HANDOFF-<任务名>.md`
+     （做了什么、改了哪几个文件、verify.js 验证结果）；
+   - 用中文 2-3 行总结。
+2. 用 bash 启动（--model 用你本轮用的同一个模型）：
+   `nohup pi -p --no-session --model '<本轮模型>' "$(cat scripts/subagent-prompt-<任务名>.txt)" </dev/null > scripts/subagent-<任务名>.out 2>&1 &`
+   然后 `echo $! > scripts/subagent-<任务名>.pid` 记下 pid。
+3. 你同时做另一个子任务。都做完后：
+   - 等 `scripts/HANDOFF-<任务名>.md` 出现（每 60 秒检查一次，最多等 20 分钟；
+     超时就 kill 掉 subagent（pid 在 scripts/subagent-<任务名>.pid），自己接手收尾）；
+   - 读 HANDOFF，检查它改的文件，跑完整 `tools/verify/verify.js` 验证；
+   - 你负责集成 + 更新 STATE.md / LOG.md；
+   - 本轮结束前 kill 掉已完成的 subagent 进程，不许留残留。
+
+不适合开 subagent 的情况：任务拆不开、要改同一个文件、上一轮刚 BLOCKED、
+本轮时间已经很紧。拿不准就别开，自己单干更稳。
+
+最后用中文给 2-3 行总结：这轮做了什么、验证结果、下一步是什么。

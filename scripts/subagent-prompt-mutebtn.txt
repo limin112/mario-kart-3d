@@ -1,0 +1,40 @@
+你是游戏开发 subagent，在 ~/workspace/mario-kart-3d/ 工作。主 agent 正在并行修改 audio.js/main.js，你只能碰白名单文件。
+
+先读这三个文件（必须）：
+1. ~/workspace/mario-kart-3d/REQUIREMENTS.md
+2. ~/workspace/mario-kart-3d/STATE.md
+3. ~/workspace/mario-kart-3d/GUIDANCE.md
+
+【子任务：给触屏控制加静音小按钮（P10 打磨）】
+背景：游戏已实现 M 键静音（main.js 的 keydown 处理里有 case 'KeyM'，audio.js 有 toggleMute）。触屏设备没有 M 键，需要在 game/touch.js 里加一个静音小按钮。
+
+要求：
+- 只改 game/touch.js（在现有 initTouchControls 里加）。
+- 新增一个小圆形按钮（复用现有 .tc-btn .tc-small 样式），id 建议 tc-mute，位置放在右上角重开按钮 ↺ 的左边（#tc-reset 是 right:12px top:12px，你可用 right: 约 12px + 按钮宽 + 8px 之类，注意用 CSS 变量 --tc-s 保持缩放一致）。
+- 点击时向 window 派发合成 KeyboardEvent（keydown+keyup，code 'KeyM'），完全复用现有键盘逻辑——不要 import audio.js，不要直接调 audio 对象（touch.js 目前零 import，保持这一点）。
+- 按钮图标用 emoji：非静音显示 🔊，点击后切换成 🔇（在 touch.js 内本地记录状态即可；main.js 的 muteHint 徽章会自己同步，因为 main.js 也监听同一个 KeyM 事件）。
+- 桌面端（非触摸设备）依然完全不注入任何 UI，行为不变。
+- 横屏矮屏（max-height:430px）媒体查询里确认新按钮不跟 HUD/其他按钮重叠（必要时同样收小）。
+
+【文件白名单——严格】
+你只能修改这一个文件：game/touch.js
+严禁碰：game/main.js、game/audio.js、game/hud.js、game/index.html、STATE.md、LOG.md、GUIDANCE.md、REQUIREMENTS.md、scripts/ 下除 HANDOFF 外的任何文件。
+（scripts/HANDOFF-mutebtn.md 是你的唯一 scripts 产出，见下。）
+
+【验证——必须做，注意端口】
+1. 语法：cp game/touch.js /tmp/touch.mjs && node --check /tmp/touch.mjs
+2. 真机验证（注意：8901 是主 agent/监工共用端口，绝对不许 kill 或占用；你用 8907）：
+   cd ~/workspace/mario-kart-3d/game && python3 -m http.server 8907 &
+   cd ~/workspace/mario-kart-3d/tools/verify
+   node verify.js http://127.0.0.1:8907/ /tmp/mute1.png --drive /tmp/mute2.png
+   要求输出 ok:true（零 console/page error）且 hud.after.speed > 0。
+   注意：headless 桌面上下文无触摸，touch.js 不会注入 UI，所以 ok:true 说明没有回归即可。
+   另外用 playwright-core 移动端上下文（hasTouch，参考 STATE.md 里 P9 的做法，可写个一次性脚本放 /tmp/，不要放进项目目录）实测：
+   - 触摸设备下 tc-mute 按钮存在且可见；
+   - 点击它后 window 收到合成 keydown:KeyM（可用事件探针），且按钮 emoji 变为 🔇；
+   - 零 console error。
+3. 验证完 kill 掉你起的 8907 http.server，不留残留进程。
+
+【交付】
+1. 把结果写成 ~/workspace/mario-kart-3d/scripts/HANDOFF-mutebtn.md：做了什么、改了哪个文件（应只有 game/touch.js）、verify.js 完整输出 JSON 摘要、移动端实测结果、遗留问题。
+2. 最后用中文 2-3 行总结。

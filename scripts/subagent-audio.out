@@ -1,0 +1,5 @@
+完成。总结：
+
+1. 新建 `game/audio.js`：`AudioManager` 类，纯 WebAudio 程序化合成（引擎双振荡器+lowpass 平滑变调、倒计时/GO/拾取/蘑菇/香蕉/打滑全部按契约实现），零 import、零外部音频，未 unlock / ctx 不可用时全方法静默 no-op，签名与契约一字不差。
+2. 验证全过：`node --check` 通过；grep 确认无 import、无 console 调用；另跑 node 冒烟测试覆盖无 window、mock ctx、ctx 构造抛错三种场景均不抛错。
+3. 交接文档已写入 `scripts/HANDOFF-audio.md`，含逐方法实现状态与集成提示；未触碰白名单外任何文件。

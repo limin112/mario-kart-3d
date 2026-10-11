@@ -1,0 +1,81 @@
+#!/bin/bash
+# Pi 游戏开发 loop：单轮迭代。由 cron 每 30 分钟调用一次。
+# 职责：确保 or-proxy 存活 -> 跑一轮 pi -p -> 代理保持运行供下一轮使用。
+set -u
+PROJ="$HOME/workspace/mario-kart-3d"
+export PATH="$HOME/.pi/agent/bin:$PATH"
+export OR_PROXY_PORT=18080
+MODEL_QWEN='strata/qwen-flash'
+MODEL_PRIMARY='openrouter-free/nvidia/nemotron-3-ultra-550b-a55b:free'
+MODEL_FALLBACK='openrouter-free/nvidia/nemotron-3-super-120b-a12b:free'
+
+# Qwen 健康检查：经 strata 中继问 worker3 的 /v1/models，200 即视为可用。
+# 注意：relay.py 是透明透传，中继本身不加鉴权，worker3 要求 Bearer key；
+# 裸 curl 只会拿到 401，所以这里必须带上 models.json 里的 strata key（现取现用，不落盘）。
+# （用户本地机器睡觉/离线时这里不通，直接跳过，避免 pi 空转 25 分钟。）
+qwen_up() {
+  [ "$(python3 -c "
+import json, os, urllib.request
+try:
+    key = json.load(open(os.path.expanduser('~/.pi/agent/models.json')))['providers']['strata']['apiKey']
+    req = urllib.request.Request('http://127.0.0.1:18182/v1/models',
+                                 headers={'Authorization': 'Bearer ' + key})
+    print(urllib.request.urlopen(req, timeout=25).status)
+except Exception:
+    print(0)
+")" = "200" ]
+}
+
+# 1. 确保代理存活（cron 环境变量齐全，surrogate 走 authd+egress 代理）
+if ! curl -s -m 5 http://127.0.0.1:18080/v1/models -o /dev/null; then
+  nohup python3 "$HOME/workspace/skills/openrouter/bin/or-proxy.py" \
+    >> "$PROJ/scripts/proxy.log" 2>&1 &
+  echo $! > "$PROJ/scripts/proxy.pid"
+  sleep 3
+fi
+
+# 1b. 清理上一轮残留的 subagent（正常 Pi 自己会收尾；这里兜底防跑飞）
+for pf in "$PROJ/scripts"/subagent-*.pid; do
+  [ -e "$pf" ] || continue
+  SPID="$(cat "$pf" 2>/dev/null)"
+  if [ -n "$SPID" ] && kill -0 "$SPID" 2>/dev/null; then
+    echo "[loop] $(date '+%F %T') killing stale subagent $SPID ($pf)" >> "$PROJ/scripts/loop-runs.log"
+    kill "$SPID" 2>/dev/null
+  fi
+  rm -f "$pf"
+done
+
+# 2. 跑一轮 Pi（25 分钟超时，无会话，每轮靠 STATE.md 交接）
+cd "$PROJ"
+PROMPT="$(cat "$PROJ/scripts/iteration-prompt.txt")"
+OUT="$PROJ/scripts/last-run-output.txt"
+: > "$OUT"
+run_pi() {
+  timeout 1500 pi -p --no-session --model "$1" "$PROMPT" </dev/null >> "$OUT" 2>&1
+}
+
+# 2a. OpenRouter 优先（用户指令）；配额耗尽则降级本地 Qwen 兜底
+run_pi "$MODEL_PRIMARY"
+RC=$?
+# 主模型若因限流/配额失败，降级到 120b 再试一次
+if [ $RC -ne 0 ] && grep -qi -E "429|rate.?limit|quota|overloaded|503" "$OUT"; then
+  echo "[loop] primary model failed, retrying with fallback" >> "$OUT"
+  run_pi "$MODEL_FALLBACK"
+  RC=$?
+fi
+# 2b. OpenRouter 每日免费配额耗尽（UTC 午夜重置）→ 本地 Qwen 兜底（零成本不限量）
+if [ $RC -ne 0 ] && grep -qi "free-models-per-day" "$OUT"; then
+  if qwen_up; then
+    echo "[loop] $(date '+%F %T') OR quota exhausted, falling back to qwen" >> "$PROJ/scripts/loop-runs.log"
+    run_pi "$MODEL_QWEN"
+    RC=$?
+  else
+    echo "[loop] $(date '+%F %T') OR quota exhausted and qwen down, sleeping 600s" >> "$PROJ/scripts/loop-runs.log"
+    sleep 600
+    exit 0
+  fi
+fi
+
+# 3. 收尾：记录本轮退出码（Pi 自己负责更新 STATE.md/LOG.md）
+echo "[loop] $(date '+%F %T') pi exit=$RC" >> "$PROJ/scripts/loop-runs.log"
+exit $RC

@@ -1,0 +1,25 @@
+[Unit]
+Description=Mario Kart 3D Pi dev loop (OpenRouter free models)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=root
+# systemd 下 $HOME 默认为 /root，脚本全用 $HOME 定位项目，必须显式指到 /home/hatch
+Environment=HOME=/home/hatch
+WorkingDirectory=/home/hatch/workspace/mario-kart-3d
+ExecStart=/home/hatch/workspace/mario-kart-3d/scripts/systemd-launch.sh
+# on-failure: SIGTERM/SIGKILL 等异常退出自动重启；
+# loop-daemon.sh 自带单例检查，正常退出码 0（已有实例在跑）不触发重启。
+Restart=on-failure
+RestartSec=60
+StartLimitIntervalSec=1800
+StartLimitBurst=30
+TimeoutStopSec=30
+KillMode=control-group
+# 代理环境变量（HTTPS_PROXY 等，含鉴权信息）绝不写进本文件；
+# 由 mario-kart-pi-loop 看门狗经 `systemctl set-environment` 注入 manager 内存。
+
+[Install]
+WantedBy=default.target

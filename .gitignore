@@ -1,0 +1,9 @@
+node_modules/
+*.log
+server.log
+shots/
+scripts/last-run-output.txt
+scripts/usage.log
+scripts/loop-runs.log
+scripts/daemon.log
+.DS_Store

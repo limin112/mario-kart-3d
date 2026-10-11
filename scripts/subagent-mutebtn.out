@@ -1,0 +1,5 @@
+完成。总结：
+
+1. **改动**：仅涉及 `game/touch.js`——新增 `#tc-mute` 小圆按钮（复用 `.tc-btn .tc-small`，位于 ↺ 左边、随 `--tc-s` 缩放，矮屏媒体查询下移避 HUD），点击派发合成 `keydown/keyup:KeyM` 复用 main.js 静音逻辑，零 import，桌面端零注入；接手时发现实现已在文件中（疑似上轮截断残留），本轮逐条核对契约后验收。
+2. **验证**：`node --check` OK；verify.js（8907 端口，8901 未动）`ok:true` 零 error、驾驶速度 7 km/h；playwright 移动端上下文实测按钮可见、事件探针收到 `keydown:KeyM`、图标 🔊→🔇、muteHint 徽章同步、与 ↺ 不重叠、零 console error；8907 服务已 kill 无残留。
+3. **交付**：`scripts/HANDOFF-mutebtn.md` 已写，含两条遗留（竖屏 muteHint 叠压为既有问题、极端双输入下图标失步）；未重新打包 zip（归主 agent）。

@@ -1,0 +1,46 @@
+你是游戏开发 subagent，在主 agent（负责 main.js 集成）并行工作。工作目录：~/workspace/mario-kart-3d/
+
+开始前按顺序读：REQUIREMENTS.md、STATE.md、GUIDANCE.md（都在项目根目录）。
+
+# 你的唯一子任务：新建 game/audio.js —— WebAudio 程序化音效模块
+
+要求（这是与主 agent 约定的 API 契约，方法名/签名一个字都不许改）：
+
+```js
+export class AudioManager {
+  constructor()                          // 不得创建 AudioContext（自动播放策略），不得抛错
+  unlock()                               // 首次用户手势时调用：创建并 resume AudioContext；幂等；全程 try/catch 静默失败
+  setEngine(speedRatio, accelInput)      // 每帧调用；speedRatio 0~1（车速/最大车速），accelInput -1|0|1；控制引擎持续音的基频(约 55~190Hz)与音量；未 unlock 时静默 no-op
+  stopEngine()                           // 引擎音量立即归零
+  playCountdownBeep()                    // 3/2/1 短促 beep（如方波 600Hz、0.12s，带短 attack/decay 防爆音）
+  playGoBeep()                           // GO 长音（如方波 900Hz、0.4s）
+  playPickup()                           // 道具箱拾取：双音上行（如 660→880Hz 两声）
+  playMushroom()                         // 蘑菇加速：快速上行扫频（sawtooth 300→1200Hz, ~0.35s）
+  playBanana()                           // 扔香蕉：噪声 whoosh（白噪声 buffer + bandpass 扫频）
+  playSlip()                             // 打滑：下行滑音（如 800→200Hz 0.4s）+ 短促警报感
+}
+```
+
+实现要点：
+1. 纯 WebAudio 程序化合成，禁止任何外部音频文件、禁止 import 除 WebAudio 外的任何东西（audio.js 里不许 import three）。
+2. 引擎音：两个 oscillator（sawtooth 主 + triangle 低八度）经 lowpass filter → 一个 engineGain → destination。setEngine 里用 setTargetAtTime 平滑改频率/音量（避免 zippering）。speedRatio=0 时音量趋近 0。
+3. 一次性音效各自创建 oscillator/noise buffer，播完 stop 并 disconnect（用 onended 或固定 stop 时间即可，不泄漏节点）。
+4. 一个 masterGain（默认 0.5）控制总音量。
+5. 【红线】headless 浏览器里 AudioContext 可能永远不 unlock 或被 suspended：所有方法在 ctx 为 null / state==='suspended' 且未 unlock 时必须安全 no-op，绝不 throw、绝不 console.error。unlock() 失败也静默。
+6. 代码风格与项目一致：ES module、中文注释、不用构建工具。
+7. 文件顶部写一段注释说明模块用途与契约。
+
+# 文件白名单（严格）
+你只能新建这两个文件：
+- game/audio.js
+- scripts/HANDOFF-audio.md
+严禁修改/创建任何其他文件，尤其 main.js、items.js、index.html、STATE.md、LOG.md、GUIDANCE.md、REQUIREMENTS.md、scripts/ 下除 HANDOFF 外的文件、tools/。验证产生的临时文件放 /tmp。
+
+# 验证（必须做）
+1. `cp game/audio.js /tmp/audio-check.mjs && node --check /tmp/audio-check.mjs` 必须通过。
+2. 快速自检：写个 /tmp 下的小 node 脚本或用 grep 检查没有 import 外部依赖、没有 console.error 调用。
+（真机 verify.js 由主 agent 集成后统一跑，你不需要起服务器。）
+
+# 完成后
+写 scripts/HANDOFF-audio.md，内容：做了什么、新建了哪个文件、API 契约实现情况（逐方法列出）、node --check 结果、任何偏离契约的地方（原则上不许偏离）。
+最后用中文 2-3 行总结。
