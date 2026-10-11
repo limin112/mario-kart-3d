@@ -655,8 +655,9 @@ class Track {
 
     const group = new THREE.Group();
     group.position.copy(pt); // 组位于起点线位置
-    // 旋转组使局部 +Z 对准切线(前进)，局部 +X 对准左法线
-    group.rotation.y = Math.atan2(tangent.x, tangent.z) + Math.PI / 2;
+    // 旋转组：局部 +Z = 前进切线，局部 +X = 右侧（旧版多转了 PI/2，把横/纵轴搞反，
+    // 导致整个拱门躺倒立在路中间）
+    group.rotation.y = Math.atan2(tangent.x, tangent.z);
     const stripeCount = 12;
     const stripeWidth = (halfWidth * 2) / stripeCount;
 
@@ -689,8 +690,8 @@ class Track {
       metalness: 0.5 
     });
     const arch = new THREE.Mesh(archGeo, archMat);
-    arch.position.set(0, archHeight / 2, 0); // 局部坐标
-    arch.rotation.z = -Math.PI / 2;
+    // 椭圆曲线本身就在 XY 平面：X=横向(±archRadius 跨路)、Y=高度(0~archHeight)，
+    // 不要再旋转（旧版 rotation.z=-PI/2 会把拱门放倒成路中间的竖直半环，即"路中间的柱子"）
     arch.castShadow = true;
     group.add(arch);
     
@@ -715,15 +716,14 @@ class Track {
     });
     for (let i = 0; i < 6; i++) {
       const flag = new THREE.Mesh(flagGeo, flagMat.clone());
-      const angle = (i / 6) * Math.PI;
-      const flagRadius = archRadius * 0.8;
-      // 局部坐标：X=左法线方向，Z=前进方向
+      // 沿拱形曲线悬挂（贴合拱门，不再平飘在半空）
+      const angle = ((i + 1) / 7) * Math.PI;
       flag.position.set(
-        -Math.cos(angle) * flagRadius, // -cos 因为局部+X是左法线
-        archHeight * 0.9,
-        Math.sin(angle) * flagRadius
+        -Math.cos(angle) * archRadius, // -cos 因为局部+X是左法线
+        Math.sin(angle) * archHeight * 0.82,
+        0
       );
-      flag.rotation.y = angle;
+      flag.rotation.y = 0; // 旗面朝前（对着来车方向）
       flag.userData = { baseRotation: flag.rotation.y, index: i };
       group.add(flag);
     }

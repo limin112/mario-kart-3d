@@ -54,7 +54,17 @@ run_pi() {
   timeout 1500 pi -p --no-session --model "$1" "$PROMPT" </dev/null >> "$OUT" 2>&1
 }
 
-# 2a. OpenRouter 优先（用户指令）；配额耗尽则降级本地 Qwen 兜底
+# 2a. Qwen 优先（用户本地免费模型，零成本不限量）：健康检查通过直接跑
+if qwen_up; then
+  echo "[loop] $(date '+%F %T') qwen up, running round with $MODEL_QWEN" >> "$PROJ/scripts/loop-runs.log"
+  run_pi "$MODEL_QWEN"
+  RC=$?
+  echo "[loop] $(date '+%F %T') pi exit=$RC (qwen)" >> "$PROJ/scripts/loop-runs.log"
+  exit $RC
+fi
+echo "[loop] $(date '+%F %T') qwen down, falling back to openrouter" >> "$PROJ/scripts/loop-runs.log"
+
+# 2b. Qwen 不可用 → OpenRouter（免费配额每日 1000 次，UTC 午夜重置）
 run_pi "$MODEL_PRIMARY"
 RC=$?
 # 主模型若因限流/配额失败，降级到 120b 再试一次
@@ -63,17 +73,11 @@ if [ $RC -ne 0 ] && grep -qi -E "429|rate.?limit|quota|overloaded|503" "$OUT"; t
   run_pi "$MODEL_FALLBACK"
   RC=$?
 fi
-# 2b. OpenRouter 每日免费配额耗尽（UTC 午夜重置）→ 本地 Qwen 兜底（零成本不限量）
+# 2c. OpenRouter 配额耗尽 → 睡 600s 等重置（Qwen 已确认不可用）
 if [ $RC -ne 0 ] && grep -qi "free-models-per-day" "$OUT"; then
-  if qwen_up; then
-    echo "[loop] $(date '+%F %T') OR quota exhausted, falling back to qwen" >> "$PROJ/scripts/loop-runs.log"
-    run_pi "$MODEL_QWEN"
-    RC=$?
-  else
-    echo "[loop] $(date '+%F %T') OR quota exhausted and qwen down, sleeping 600s" >> "$PROJ/scripts/loop-runs.log"
-    sleep 600
-    exit 0
-  fi
+  echo "[loop] $(date '+%F %T') OR quota exhausted and qwen down, sleeping 600s" >> "$PROJ/scripts/loop-runs.log"
+  sleep 600
+  exit 0
 fi
 
 # 3. 收尾：记录本轮退出码（Pi 自己负责更新 STATE.md/LOG.md）

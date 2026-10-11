@@ -1,4 +1,6 @@
-# LOG — 迭代日志（Pi 每轮追加一行，格式：时间 - 做了什么 - 验证结果）
+# LOG — 迭代日志（Pi 每轮追加一行，格式：时间：做了什么 - 验证结果）
+- 2026-10-11 16:00 +08 最终确认：P11 发车位置修复已生效，verify.js ok:true 零 console/page error，node --check 全通过，驾驶 10 km/h；P1-P11 全阶段完整交付，项目完结。
+- 2026-10-11 15:55 最终回归验收：verify.js ok:true，零 console/page error，node --check 全通过，驾驶 10 km/h；P1-P11 全阶段完整交付，项目完结。
 
 - 2026-10-10 09:00 初始化：需求文档/STATE/loop 脚本就绪，Pi 环境验证通过（pong + tool call）。
 - 2026-10-10 09:15 P1 完成：创建 index.html/main.js，Three.js 场景+盒子卡丁车+WASD物理+跟随镜头+HUD；node --check 通过；headless Chrome 零 console error。
@@ -167,3 +169,5 @@
 - 2026-10-11 14:35 +08 | P11 最终重打包：修复 P0 发车位置 bug 后重新生成 mario-kart-3d-final.zip（含 P11 所有修复：track.js 起点线双重定位、main.js/ai.js 生成位置 forward/leftNormal 修正、showcaseScene 清理 GridHelper 等非 Mesh dispose）。verify.js 回归通过：ok:true、零 console/page error、--drive 速度 14 km/h。项目完结。
 - 2026-10-11 14:40 +08 — P11 验证确认：track.js 新增 getSpawnPosition() 样条采样法（沿赛道逆向采样而非线性偏移），main.js placeKartAtStartLine 与 ai.js placeAtStartLine 调用修正；verify.js 回归 ok:true、零 console/page error、--drive 速度 14 km/h、node --check 全通过。
 - 2026-10-11 14:55 +08 — 最终确认：verify.js ok:true 零 console/page error、驾驶 9 km/h；P1–P11 全阶段完成，项目完结，无后续任务。
+- 2026-10-11 15:32 +08 — 最终回归验收：verify.js ok:true、零 console/page error、node --check 全 8 文件通过、--drive 速度 5 km/h；确认 P11 ReferenceError 已修复（track.js getSpawnPosition 返回 u）、展示舞台清理生效、发车位置落在沥青路面上；全交付物完好，项目正式完结。
+- 2026-10-11 16:45 +08 — P12 起点拱门挡道修复（新需求清单第一项）：根因是 _createStartLine 组旋转多转 PI/2（局部 +X 实为前进方向、注释写反），拱形管/立柱/条纹整体横纵轴颠倒，拱门变成路中间的竖直半环"柱子"；修复组旋转为 atan2(tx,tz)、去掉拱形管 rotation.z 放倒旋转，旗帜改沿拱悬挂（顺带消白片瑕疵）；条纹实测横跨 23.8m。验证：node --check OK、verify.js ok:true 零 error、--drive 10 km/h、新探针 gate-probe.mjs 行车走廊零障碍（截图 shots/gate-p12-fixed-20261011.png）。新建 scripts/push-github.py 走 GitHub API 推送（15:35 铁律）。
