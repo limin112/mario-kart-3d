@@ -461,6 +461,10 @@ class Track {
       color: 0x444444,
       roughness: 0.9,
       metalness: 0.1,
+      // P13: 路面与地面几乎共面，polygonOffset 保证路面深度始终压过地面（远距也稳定）
+      polygonOffset: true,
+      polygonOffsetFactor: -1,
+      polygonOffsetUnits: -1,
     });
 
     this.roadMesh = new THREE.Mesh(geo, mat);
@@ -486,8 +490,9 @@ class Track {
 
       const left = pt.clone().addScaledVector(normal, halfWidth);
       const right = pt.clone().addScaledVector(normal, -halfWidth);
-      left.y = 0.02;
-      right.y = 0.02;
+      // P13: 抬高到路肩(0.04)之上，避免与路面/路肩共面闪烁
+      left.y = 0.06;
+      right.y = 0.06;
 
       linePositions[0].push(left.x, left.y, left.z);
       linePositions[1].push(right.x, right.y, right.z);
@@ -523,8 +528,9 @@ class Track {
 
         const inner = pt.clone().addScaledVector(normal, side * roadHalf);
         const outer = pt.clone().addScaledVector(normal, side * (roadHalf + shoulderW));
-        inner.y = 0;
-        outer.y = 0;
+        // P13: 原来 y=0 与地面完全共面导致红白路肩 Z-fighting 闪烁；抬高 4cm
+        inner.y = 0.04;
+        outer.y = 0.04;
 
         const idx = positions.length / 3;
         positions.push(inner.x, inner.y, inner.z, outer.x, outer.y, outer.z);
@@ -552,6 +558,10 @@ class Track {
         color: 0xffffff,
         roughness: 0.95,
         metalness: 0,
+        // P13: 双保险——深度偏移，保证路肩永远压过其下的地面
+        polygonOffset: true,
+        polygonOffsetFactor: -2,
+        polygonOffsetUnits: -2,
       });
 
       const mesh = new THREE.Mesh(geo, mat);
@@ -1334,8 +1344,9 @@ class Track {
 
           const left = pt.clone().addScaledVector(normal, boostWidth / 2);
           const right = pt.clone().addScaledVector(normal, -boostWidth / 2);
-          left.y = 0.025;
-          right.y = 0.025;
+          // P13: 抬高，与路面拉开 4cm，避免远距闪烁
+          left.y = 0.05;
+          right.y = 0.05;
 
           const idx = positions.length / 3;
           positions.push(left.x, left.y, left.z, right.x, right.y, right.z);
