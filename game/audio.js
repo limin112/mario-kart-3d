@@ -15,6 +15,7 @@
 //   playBanana()                           扔香蕉：噪声 whoosh
 //   playSlip()                             打滑：下行滑音 + 短促警报感
 //   playBoostPad()                         加速带：上行 whoosh + 嗖音
+//   playRev()                              引擎轰鸣轰油门（开屏动画用），~1.1s 两段式转速扫频
 //   toggleMute() / setMuted(m) / isMuted() 静音开关（M 键），返回静音状态
 //
 // 红线：headless 浏览器里 AudioContext 可能永远 suspended 或创建失败——
@@ -224,6 +225,61 @@ export class AudioManager {
   playBoostPad() {
     this._noise(0.28, 0.35, 'bandpass', 350, 2800, 0);
     this._tone('triangle', 400, 1400, 0.22, 0.22, 0.02);
+  }
+
+  // 引擎轰鸣（开屏动画）：轰两脚油门。sawtooth 主振 + 低八度 triangle，
+  // 频率两段式扫频（轰→落→再轰→落），lowpass 随转速开合，外加一层低通噪声
+  // 做排气质感。约 1.1s 播完自动断开节点。未 unlock 时安全 no-op。
+  playRev() {
+    if (!this._ready()) return;
+    try {
+      const t0 = this.ctx.currentTime;
+      const dur = 1.1;
+      const filter = this.ctx.createBiquadFilter();
+      filter.type = 'lowpass';
+      filter.Q.value = 3;
+      const g = this.ctx.createGain();
+      // 音量包络：快起、中段维持、尾段收掉
+      g.gain.setValueAtTime(0, t0);
+      g.gain.linearRampToValueAtTime(0.5, t0 + 0.06);
+      g.gain.setValueAtTime(0.5, t0 + dur * 0.75);
+      g.gain.linearRampToValueAtTime(0, t0 + dur);
+      filter.connect(g);
+      g.connect(this.master);
+      // 两段轰油门的频率轮廓（Hz）：70 轰到 210 落 110，再轰到 250 落 90
+      const profile = (base) => [[0, base], [0.18, base * 3.0], [0.38, base * 1.6], [0.6, base * 3.6], [0.85, base * 1.3], [1, base * 1.1]];
+      const oscs = [];
+      const layers = [
+        { type: 'sawtooth', base: 70 },
+        { type: 'triangle', base: 35 },
+      ];
+      for (const L of layers) {
+        const osc = this.ctx.createOscillator();
+        osc.type = L.type;
+        const pts = profile(L.base);
+        osc.frequency.setValueAtTime(pts[0][1], t0);
+        for (let i = 1; i < pts.length; i++) {
+          osc.frequency.exponentialRampToValueAtTime(Math.max(1, pts[i][1]), t0 + pts[i][0] * dur * 0.9);
+        }
+        osc.connect(filter);
+        osc.start(t0);
+        osc.stop(t0 + dur + 0.02);
+        oscs.push(osc);
+      }
+      // 滤波随转速开合（用同一轮廓的近似：三段扫）
+      filter.frequency.setValueAtTime(350, t0);
+      filter.frequency.exponentialRampToValueAtTime(2400, t0 + 0.2 * dur);
+      filter.frequency.exponentialRampToValueAtTime(900, t0 + 0.42 * dur);
+      filter.frequency.exponentialRampToValueAtTime(2800, t0 + 0.62 * dur);
+      filter.frequency.exponentialRampToValueAtTime(500, t0 + dur * 0.9);
+      // 排气噪声层：低通白噪声垫在底下
+      this._noise(dur * 0.9, 0.12, 'lowpass', 900, 300, 0);
+      let done = 0;
+      oscs[0].onended = () => {
+        if (++done < oscs.length) return;
+        try { oscs.forEach(o => o.disconnect()); filter.disconnect(); g.disconnect(); } catch (e) { /* 静默 */ }
+      };
+    } catch (e) { /* 静默 */ }
   }
 
   // 静音开关：切换主音量（0 ↔ baseVolume），返回切换后的静音状态。

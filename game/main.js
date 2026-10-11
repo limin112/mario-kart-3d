@@ -5,6 +5,7 @@ import { PlayerItemManager, AIItemManager } from './items.js';
 import { ParticleSystem } from './particles.js';
 import { createKart, createShowcaseKart, updateShowcaseKart, resetKartForRace } from './kart.js';
 import { AudioManager } from './audio.js';
+import { startSplash } from './splash.js';
 
 // ============ 全局状态 ============
 const state = {
@@ -208,10 +209,12 @@ const particleSystem = new ParticleSystem(scene);
 const keys = { forward: false, backward: false, left: false, right: false };
 
 window.addEventListener('keydown', (e) => {
-  // P7: 展示模式下任意键进入比赛
-  if (state.showcaseMode) {
-    state.showcasePhase = 'exit';
-    state.showcasePhaseStartTime = performance.now() / 1000;
+  // P7: 展示模式下任意键进入比赛；P16: 开屏 splash 期间吞掉按键（交给 splash 自己的监听器）
+  if (state.showcaseMode && !showcaseDone) {
+    if (splashFinished) {
+      state.showcasePhase = 'exit';
+      state.showcasePhaseStartTime = performance.now() / 1000;
+    }
     return;
   }
   switch (e.code) {
@@ -236,7 +239,7 @@ window.addEventListener('keyup', (e) => {
 
 // 点击也可跳过展示模式
 window.addEventListener('click', () => {
-  if (state.showcaseMode && !showcaseDone) {
+  if (state.showcaseMode && !showcaseDone && splashFinished) {
     state.showcasePhase = 'exit';
     state.showcasePhaseStartTime = performance.now() / 1000;
   }
@@ -574,6 +577,8 @@ let lastTime = 0;
 let countdownDone = false;
 let showcaseDone = false;
 let countdownStarted = false;
+// P16: 开屏 splash 是否已播完（播完前展示舞台冻结在组装态，不开始动画）
+let splashFinished = false;
 
 // 缓动函数
 function easeOutCubic(t) { return 1 - Math.pow(1 - t, 3); }
@@ -584,6 +589,13 @@ async function gameLoop(time) {
   const dt = Math.min((time - lastTime) / 1000, 1 / 30); // 限制最大 dt
   lastTime = time;
   gameTime = time / 1000; // 全局游戏时间（秒），基于 rAF 时间戳
+
+  // P16: 开屏 splash 播放期间——只渲染冻结的展示背景，不推进展示时间线
+  if (state.showcaseMode && !showcaseDone && !splashFinished) {
+    renderer.render(showcaseScene, camera);
+    requestAnimationFrame(gameLoop);
+    return;
+  }
 
   // P7: 展示模式
   if (state.showcaseMode && !showcaseDone) {
@@ -653,7 +665,7 @@ async function gameLoop(time) {
     } else if (state.showcasePhase === 'exit') {
       // 1.8-2.0s: 退出过渡：0.2s 淡出
       const phaseElapsed = gameTime - state.showcasePhaseStartTime;
-      const exitProgress = THREE.MathUtils.clamp(phaseElapsed / 0.2, 0, 1);
+      const exitProgress = THREE.MathUtils.clamp(phaseElapsed / 0.3, 0, 1);
       const easedExit = easeInOutCubic(exitProgress);
       state.showcaseTransitionProgress = easedExit;
       
@@ -665,9 +677,9 @@ async function gameLoop(time) {
         state.showcaseTitle.position.y = 6 - easedExit * 2;
       }
       
-      // 相机快速拉远
-      const camRadius = THREE.MathUtils.lerp(12, 22, easedExit);
-      const camHeight = THREE.MathUtils.lerp(7, 12, easedExit);
+      // 相机拉远（起点 16/8 与 explode 末态衔接，不跳变）
+      const camRadius = THREE.MathUtils.lerp(16, 24, easedExit);
+      const camHeight = THREE.MathUtils.lerp(8, 12, easedExit);
       state.showcaseCameraAngle += dt * 0.4;
       camera.position.x = Math.sin(state.showcaseCameraAngle) * camRadius;
       camera.position.z = Math.cos(state.showcaseCameraAngle) * camRadius;
@@ -862,6 +874,21 @@ window.addEventListener('resize', () => {
   camera.updateProjectionMatrix();
   renderer.setSize(window.innerWidth, window.innerHeight);
 });
+
+// ============ P16: 开屏 splash ============
+// 流程：logo 大字开屏（splash.js 自绘 DOM，约 2.6s，可任意键/点击跳过）
+// → 播完/跳过后解冻 P7 展示舞台（引擎轰一脚油门）→ 倒计时 → 比赛。
+function startShowcaseAfterSplash() {
+  const now = performance.now() / 1000;
+  state.showcaseStartTime = now;
+  state.showcasePhaseStartTime = now;
+  state.showcasePhase = 'intro';
+  splashFinished = true;
+  // 引擎轰鸣（未 unlock 时安全 no-op；splash 跳过手势会先触发 unlock）
+  audio.playRev();
+}
+
+startSplash(startShowcaseAfterSplash);
 
 // 启动
 requestAnimationFrame(gameLoop);
