@@ -1,0 +1,38 @@
+name: 构建并发布到 GitHub Pages
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'game/**'
+      - '.github/workflows/deploy-pages.yml'
+  workflow_dispatch:  # 手动触发
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: true
+
+jobs:
+  deploy:
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: 准备站点文件
+        run: |
+          mkdir -p _site
+          cp -r game/* _site/
+          # 确保三个.js有正确的 MIME（Pages 自动处理）
+          ls _site/
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: _site
+      - id: deployment
+        uses: actions/deploy-pages@v4
