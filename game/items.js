@@ -368,6 +368,10 @@ class Banana {
     this.slipped = new Set();
 
     this.mesh = this._createMesh();
+    // 既有 bug 修复：mesh 从未摆到世界坐标，扔出的香蕉一直渲染在世界原点（碰撞用的是
+    // this.position 逻辑坐标所以手感正常，但视觉位置错）；顺手补上定位/朝向。
+    this.mesh.position.copy(this.position);
+    this.mesh.rotation.y = this.rotation;
     this.scene.add(this.mesh);
   }
 
@@ -518,6 +522,20 @@ export class PlayerItemManager {
     this.isSlipping = false;
 
     this._createItemBoxes();
+    this._createShortcutBananas();
+  }
+
+  /**
+   * P19e：捷径代价——每条捷径正中一枚常驻香蕉皮（lifetime=Infinity 不过期，
+   * 碰过的人各自只滑一次由 Banana.slipped 集合保证），玩家与 AI 共享碰撞。
+   */
+  _createShortcutBananas() {
+    for (const sc of this.track.shortcuts || []) {
+      const banana = new Banana(this.scene, sc.hazardPos.clone(), sc.dirAngle, null);
+      banana.lifetime = Infinity; // 常驻，不随时间消失
+      this.bananas.push(banana);
+      if (this.aiItemManager) this.aiItemManager.addBanana(banana);
+    }
   }
 
   _createItemBoxes() {
@@ -864,6 +882,7 @@ export class PlayerItemManager {
     if (this.aiItemManager) {
       this.aiItemManager.bananas = [];
     }
+    this._createShortcutBananas(); // P19e：捷径常驻香蕉是场景设施，重置后必须补回
 
     for (const mushroom of this.mushrooms) {
       mushroom.dispose();

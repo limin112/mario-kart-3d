@@ -403,6 +403,11 @@ class Track {
     this.boostZones = [];
     this.slowMarks = [];
     this.checkpoints = [];
+    // P19e：捷径（classic 专属；dune/glacier 无 shortcuts 数据 → 空数组零回归）
+    this.shortcuts = [];            // { a, b, dir, len, halfWidth, yA, yB, hazardPos, dirAngle }
+    this.shortcutCheckpoints = [];  // { position, radius, bypassFrom, bypassTo }（不进 this.checkpoints，不影响判圈）
+    this.shortcutMeshes = [];
+    this.shortcutTextures = [];
     this.trackLength = 0;
 
     this._build();
@@ -421,6 +426,7 @@ class Track {
     this._createTracksideDecorations();
     this._createBoostZones();
     this._createCheckpoints();
+    this._createShortcuts();
     this._createSkybox();
   }
 
@@ -1608,6 +1614,105 @@ class Track {
   }
 
   /**
+   * P19e：捷径——从 layout.shortcuts 数据生成斜切草地的窄路直道。
+   * from/to 为平面近似点，运行时吸附到主样条上作为出入口；
+   * 中段放一枚常驻香蕉代价点（hazardPos，由 items.js 消费），
+   * 并登记一枚独立检查点（不进 checkpoints 数组，避免破坏 8 检查点判圈逻辑），
+   * 捷径内必须压过它才等价于通过被跳过的全部主线检查点（防白嫖切弯）。
+   */
+  _createShortcuts() {
+    const raws = this.layout.shortcuts || [];
+    for (const raw of raws) {
+      const cf = this.getClosestPoint(new THREE.Vector3(raw.from[0], 0, raw.from[1]));
+      const ct = this.getClosestPoint(new THREE.Vector3(raw.to[0], 0, raw.to[1]));
+      const A = cf.point.clone();
+      const B = ct.point.clone();
+      const dir = new THREE.Vector3(B.x - A.x, 0, B.z - A.z);
+      const len = dir.length();
+      if (len < 10) continue;
+      dir.divideScalar(len);
+      const halfWidth = raw.roadWidth || 6;
+      const nrm = new THREE.Vector3(-dir.z, 0, dir.x);
+
+      // 路面带（4 角 ribbon，y 跟出入口高程线性过渡；绕序同主路面：上方法线朝上）
+      const yA = A.y, yB = B.y;
+      const MY = 0.012; // 略高于草地平面；交叉口靠 polygonOffset(-2) 压过主路面(-1)
+      const positions = [];
+      const la = A.clone().addScaledVector(nrm, halfWidth);
+      const ra = A.clone().addScaledVector(nrm, -halfWidth);
+      const lb = B.clone().addScaledVector(nrm, halfWidth);
+      const rb = B.clone().addScaledVector(nrm, -halfWidth);
+      positions.push(la.x, yA + MY, la.z, ra.x, yA + MY, ra.z, lb.x, yB + MY, lb.z, rb.x, yB + MY, rb.z);
+      const geo = new THREE.BufferGeometry();
+      geo.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
+      geo.setAttribute('normal', new THREE.Float32BufferAttribute([0, 1, 0, 0, 1, 0, 0, 1, 0, 0, 1, 0], 3));
+      geo.setAttribute('uv', new THREE.Float32BufferAttribute([0, 0, 0, 1, 1, 0, 1, 1], 2));
+      geo.setIndex([0, 2, 1, 2, 3, 1]);
+      geo.computeBoundingSphere();
+
+      const tex = createAsphaltTexture();
+      tex.repeat.set(Math.max(1, Math.round(len / 8)), 1);
+      const mat = new THREE.MeshStandardMaterial({
+        map: tex,
+        color: this.theme.roadColor ?? 0x444444,
+        roughness: 0.9,
+        metalness: 0.1,
+        polygonOffset: true,
+        polygonOffsetFactor: -2,
+        polygonOffsetUnits: -2,
+      });
+      const mesh = new THREE.Mesh(geo, mat);
+      mesh.receiveShadow = true;
+      this.scene.add(mesh);
+      this.shortcutMeshes.push(mesh);
+      this.shortcutTextures.push(tex);
+
+      // 被捷径跳过的连续主线检查点索引（t 落在入口→前进弧段开区间内）
+      const span = (((ct.t - cf.t) % 1) + 1) % 1;
+      let bypassFrom = -1, bypassTo = -1;
+      for (const cp of this.checkpoints) {
+        const u = (((cp.userData.t - cf.t) % 1) + 1) % 1;
+        if (u > 0.01 && u < span - 0.01) {
+          if (bypassFrom === -1) bypassFrom = cp.userData.checkpointIndex;
+          bypassTo = cp.userData.checkpointIndex;
+        }
+      }
+      if (bypassFrom === -1) continue; // 不跳过任何检查点的"捷径"没有意义
+
+      const mid = A.clone().lerp(B, 0.5);
+      mid.y = (yA + yB) / 2;
+      this.shortcutCheckpoints.push({
+        position: mid.clone().setY(mid.y + 1),
+        radius: halfWidth * 2.5,
+        bypassFrom,
+        bypassTo,
+        tFrom: cf.t,
+        tTo: ct.t,
+      });
+      this.shortcuts.push({
+        a: A, b: B, dir: dir.clone(), len, halfWidth, yA, yB,
+        hazardPos: mid.clone().setY(mid.y + 0.05), // 常驻香蕉代价（items.js 消费）
+        dirAngle: Math.atan2(dir.x, dir.z),
+      });
+    }
+  }
+
+  /**
+   * P19e：查询位置是否在某条捷径路面上（2D 投影，含端点 1m 余量）
+   * @returns {Object|null} { sc, s, lat }
+   */
+  _shortcutInfo(position) {
+    for (const sc of this.shortcuts) {
+      const ax = position.x - sc.a.x, az = position.z - sc.a.z;
+      const s = ax * sc.dir.x + az * sc.dir.z;
+      if (s < -1 || s > sc.len + 1) continue;
+      const lat = Math.abs(ax * sc.dir.z - az * sc.dir.x);
+      if (lat <= sc.halfWidth) return { sc, s: THREE.MathUtils.clamp(s, 0, sc.len), lat };
+    }
+    return null;
+  }
+
+  /**
    * 获取距离赛道中心线的最近距离和对应的 t 值
    * @param {THREE.Vector3} position - 世界坐标位置
    * @returns {Object} { distance, t, point, tangent, normal }
@@ -1642,6 +1747,9 @@ class Track {
    * 卡丁车每帧调用一次贴地；水平偏移由调用方保证（街机物理本身 2D）。
    */
   getSurfaceY(position) {
+    // P19e：捷径有自己的高程线性过渡（斜切草地，不跟主样条走）
+    const si = this._shortcutInfo(position);
+    if (si) return THREE.MathUtils.lerp(si.sc.yA, si.sc.yB, si.s / si.sc.len);
     const { point } = this.getClosestPoint(position);
     return point.y;
   }
@@ -1677,6 +1785,7 @@ class Track {
    * @returns {boolean}
    */
   isOnTrack(position) {
+    if (this._shortcutInfo(position)) return true; // P19e：捷径路面
     const { distance } = this.getClosestPoint(position);
     const maxDist = this.cfg.roadWidth + this.cfg.shoulderWidth;
     return distance <= maxDist;
@@ -1688,6 +1797,7 @@ class Track {
    * @returns {boolean}
    */
   isOnRoad(position) {
+    if (this._shortcutInfo(position)) return true; // P19e：捷径路面（窄，无路肩待遇）
     const { distance } = this.getClosestPoint(position);
     return distance <= this.cfg.roadWidth;
   }
@@ -1722,6 +1832,15 @@ class Track {
     const dist = position.distanceTo(cp.position);
     if (dist < this.cfg.roadWidth * 2) {
       return nextIndex;
+    }
+    // P19e：捷径检查点——当下一个主线检查点属于"可被捷径跳过"集合时，
+    // 压过捷径检查点等价于通过被跳过的最后一个（捷径内必须经过，防白嫖）。
+    for (const sc of this.shortcutCheckpoints) {
+      // 支持跨越起点的环绕区间（bypassFrom > bypassTo 时取并集侧）；classic 数据为 1→3 不环绕
+      const inSet = sc.bypassFrom <= sc.bypassTo
+        ? (nextIndex >= sc.bypassFrom && nextIndex <= sc.bypassTo)
+        : (nextIndex >= sc.bypassFrom || nextIndex <= sc.bypassTo);
+      if (inSet && position.distanceTo(sc.position) < sc.radius) return sc.bypassTo;
     }
     return -1;
   }
@@ -1926,6 +2045,13 @@ class Track {
       this.scene.remove(sm);
     }
     if (this.slowMarkTexture) this.slowMarkTexture.dispose();
+    // P19e：捷径路面与纹理
+    for (const m of this.shortcutMeshes || []) {
+      m.geometry.dispose();
+      m.material.dispose();
+      this.scene.remove(m);
+    }
+    for (const tex of this.shortcutTextures || []) tex.dispose();
     // 清理看台
     if (this.grandstands) {
       for (const gs of this.grandstands) {
