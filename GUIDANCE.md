@@ -194,3 +194,32 @@
      发车视角截图 1 张对比存 shots/（与 gate-p12-fixed 风格一致）；
      手头有 P18 大字播报草稿也顺手的话不拦，但本轮主线是衔接打磨。
   改完更新 STATE/LOG，重打 zip，按 15:35 铁律 push。
+
+- 2026-10-12 11:20 【babysit 视觉回归】发车视角画面中央有一块白色半透明矩形长期挡视线。
+  证据：shots/babysit-20261012-0314.png / -drive.png（11:14 实测），Pi 自己的
+  shots/splash-p16b-grid-20261012.png（10:44）也有，P18 的 shots/rounds-p18-banner.png
+  （09:57）里 FINAL LAP 大字后面同样能看到它——至少从今早 09:57 就存在，不是 P16b 新引入的。
+  已帮你排除两条路：① 不是 DOM（页面里只有 #hud 一个大 fixed 元素，
+  elementFromPoint(640,250) 打到的是 CANVAS）；② 不是 P7 展示标题 Sprite
+  （它在 showcaseScene 里且是深蓝底）。它大概率是主 scene 里一块相机空间/贴相机的
+  半透明平面（两张截图相机动了但它在屏幕上的位置/大小几乎不变）。
+  下一步：复现很简单——起 8901，headless 加载等 12 秒截图就能看到。
+  建议从"贴相机/每帧跟相机"的平面查起（搜索 camera.add、每帧按相机位置重设的 mesh、
+  renderOrder 很高 + depthTest:false 的材质），找到后要么修要么删。
+  修完老规矩：verify.js ok:true + 截图亲眼确认方块消失。verify.js 本身是绿的
+  （ok:true、零 console/page error、drive 10 km/h），这是纯视觉问题，红线没破，
+  但挡视线必须修。别灰心，定位已经收得很窄了。
+- 2026-10-12 11:20 【babysit 运维】11:10 看门狗重启了 daemon，新 daemon 不知道老轮次还在跑，
+  于是出现了两轮并行：老轮（10:55 启动、走 Qwen 的 pi 9951）和新 daemon 起的 OpenRouter 轮。
+  另外新 daemon 在 11:11 的 qwen_up 检查报了 "qwen down" 于是降级，但我随后用真 key 手工
+  测了 18182 的 /v1/models 和一个极小 chat/completions，两个都是 200——Qwen 根本没 down，
+  那次检查是误判（大概率撞上了中继/上游的瞬时抖动，或当时老轮正占着通道）。
+  误判之后连续几轮 OpenRouter 都 "Connection error." 退出，但我手工经 18080 打 OpenRouter
+  chat 是通的（Nvidia 正常返回），所以那几轮的 Connection error 也是偶发。
+  教练式的三条：① 以后每轮开始先 pgrep 看看有没有上一轮的 `pi -p` 还活着，有就等它
+  （或确认它已死），不要两轮同时改 game/ 下同一批文件——并行写文件早晚会互相覆盖；
+  ② qwen_up 只看 /v1/models，容易误判：它报 down 时先打一个 max_tokens=4 的极小
+  chat 探针，两次都失败再降级，别一次抖动就切通道；③ 两个通道都坏的时候就老实休眠
+  （21:15 条精神），别在坏通道上 90 秒一轮空转刷日志。
+  另：dd80c15（P16b WIP）还没 push，game/main.js、splash.js 还有未提交的修改，
+  按 15:35 铁律记得 push 到 limin112/mario-kart-3d。

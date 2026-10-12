@@ -6,9 +6,9 @@
  *   countdown3  #countdown 首次可见（3 出现）
  *   go          #countdown 文本出现 GO!
  *   running     玩家可驾驶（HUD 速度可非 0 之前置：用 window.__mkRunning 不可得，改用 countdown 隐藏）
- * 注意：headless 软渲染会拉长 rAF 驱动的阶段（展示/倒计时），真实 60fps 下为设计值：
- *   自动路径 splash 2.43s + intro 0.6 + explode 1.2 + exit 0.25 = 4.48s 进倒计时，GO 完成 ~6.1s
- *   跳过路径（t=0.5s 按键）0.78s + 2.05 = 2.83s 进倒计时
+ * 注意：headless 软渲染会拉长 rAF 驱动的阶段（展示/倒计时），真实 60fps 下为设计值（P16 二步收尾）：
+ *   自动路径 splash 2.28s(1950+300退场) + intro 0.6 + explode 1.2 + exit 0.2 = 4.28s 进倒计时，GO 完成 ~5.88s
+ *   跳过路径（t=0.5s 按键）0.78s + 2.0 = 2.78s 进倒计时，GO 完成 ~4.38s
  * 用法：node p16b-timing.mjs <url> [--skip]
  */
 import { chromium } from 'playwright-core';

@@ -7,7 +7,9 @@
  * 可见期 logo opacity 峰值，路径判定全部基于事件时刻，与 load 解耦。
  *  a) 自动路径：splash 出现 → 无人干预自动消失（gone-seen ≈ 2.4~2.6s 设计值，
  *     软渲染下可拉长）；退场后无 DOM 残留、零 error。
- *  b) 跳过路径：splash 出现后 600ms 按 Enter → ~300ms 内消失（gone-seen < 1500ms）。
+ *  b) 跳过路径：splash 出现后 600ms 按 Enter → 按下后 3s 内消失（软渲染余量）。
+ *     P16 第二步修正：先关 page1 再开 page2（否则 page1 比赛循环在软渲染下抢满 CPU，
+ *     page2 rAF 被饿死、splash 退场帧被拖慢致误报）；判锚点改用"按下时刻"而非"出现时刻"。
  * 用法：node splash-probe.mjs <url>
  */
 import { chromium } from 'playwright-core';
@@ -62,7 +64,8 @@ const INIT = () => {
     }));
     report.steps.push({ step: 'post', ...post });
 
-    // ---- b) 跳过路径（新页面，重置 __sp）----
+    // ---- b) 跳过路径（先关掉 page1，避免其比赛循环抢满软渲染 CPU）----
+    await page.close().catch(() => {});
     const page2 = await browser.newPage({ viewport: { width: 1280, height: 800 } });
     page2.on('console', (m) => { if (m.type() === 'error') report.consoleErrors.push(m.text().slice(0, 300)); });
     page2.on('pageerror', (e) => report.pageErrors.push(String(e).slice(0, 300)));
@@ -75,6 +78,7 @@ const INIT = () => {
       await page2.waitForTimeout(150);
     }
     await page2.waitForTimeout(600); // 过注入+500ms 防误触窗口
+    const tPress = await page2.evaluate(() => performance.now()); // 同页时钟，不受跨页时钟差影响
     await page2.keyboard.press('Enter');
     const t1 = Date.now();
     let skip = { seen: 0, gone: 0 };
@@ -83,12 +87,13 @@ const INIT = () => {
       if (skip.gone) break;
       await page2.waitForTimeout(150);
     }
-    report.steps.push({ step: 'skip', ...skip, durMs: skip.gone - skip.seen, pressTookMs: Date.now() - t1 });
+    report.steps.push({ step: 'skip', ...skip, durMs: skip.gone - skip.seen, sincePressMs: skip.gone - tPress, pressTookMs: Date.now() - t1 });
+    const sincePressMs = skip.gone - tPress;
     await page2.close();
 
     const aOk = auto.seen > 0 && auto.gone > 0 && auto.maxOpacity > 0.5;
     const clean = !post.overlay && !post.style;
-    const bOk = seen && skip.gone > 0 && (skip.gone - skip.seen) < 1500; // 600ms 等待+250ms 淡出+余量
+    const bOk = seen && skip.gone > 0 && sincePressMs < 3000; // 按下后 250ms 淡出+软渲染余量
     const noErr = report.consoleErrors.length === 0 && report.pageErrors.length === 0;
     report.ok = !!(aOk && clean && bOk && noErr);
   } catch (e) {

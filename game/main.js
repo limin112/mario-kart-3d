@@ -459,6 +459,22 @@ function updateCamera(dt) {
   camera.lookAt(cameraTarget);
 }
 
+// P16 第二步：相机瞬移到车尾跟随位（展示→发车视角切换用，之后 updateCamera 接管）
+function snapCameraBehindKart() {
+  const kartPos = playerKart.position;
+  const rot = playerKart.rotation.y;
+  camera.position.set(
+    kartPos.x + Math.sin(rot) * cameraOffset.z,
+    kartPos.y + cameraOffset.y,
+    kartPos.z + Math.cos(rot) * cameraOffset.z
+  );
+  camera.lookAt(
+    kartPos.x - Math.sin(rot) * 5,
+    kartPos.y + 1,
+    kartPos.z - Math.cos(rot) * 5
+  );
+}
+
 // ============ HUD 更新 ============
 function updateHUD() {
   document.getElementById('speed').textContent = state.speed;
@@ -671,9 +687,9 @@ async function gameLoop(time) {
         state.showcasePhaseStartTime = gameTime;
       }
     } else if (state.showcasePhase === 'exit') {
-      // P16 第二步：退出过渡 0.25s（原 0.3s，压缩总时长）
+      // P16 第二步：退出过渡 0.2s（原 0.3→0.25→0.2，splash→GO 总时长压进 5~6s）
       const phaseElapsed = gameTime - state.showcasePhaseStartTime;
-      const exitProgress = THREE.MathUtils.clamp(phaseElapsed / 0.25, 0, 1);
+      const exitProgress = THREE.MathUtils.clamp(phaseElapsed / 0.2, 0, 1);
       const easedExit = easeInOutCubic(exitProgress);
       state.showcaseTransitionProgress = easedExit;
       
@@ -712,12 +728,15 @@ async function gameLoop(time) {
         });
         showcaseScene.clear();
         showcaseDone = true;
+        // P16 第二步：倒计时开始前先把玩家车摆上发车格、相机贴到车尾——
+        // 倒计时画面即发车视角（AI 已在格），消除"倒计时看原点、GO 后相机飞越 50m"的衔接断裂
+        placeKartAtStartLine(playerKart, kartPhysics, track, 1);
+        snapCameraBehindKart();
         // 启动倒计时
         if (!countdownStarted) {
           countdownStarted = true;
           startCountdown().then(() => {
-            // 将玩家卡丁车放置到起点线（前排右侧：索引 1）
-            placeKartAtStartLine(playerKart, kartPhysics, track, 1);
+            // P16 第二步：出生点放置已提前到倒计时之前，这里只启动比赛
             state.running = true;
             state.started = true;
             announceRound('ROUND 1', false); // P18: 开赛播报
@@ -753,6 +772,8 @@ async function gameLoop(time) {
       kartPhysics.currentLapStart = gameTime;
       state.currentLapStart = kartPhysics.currentLapStart;
     }
+    // P16 第二步：倒计时期间保持跟随机位（车静止，lerp 无感），发车视角稳定
+    updateCamera(dt);
     // 赛道动画更新（云朵、观众、路灯）
     track.update(dt, gameTime);
     particleSystem.update(dt, camera);
