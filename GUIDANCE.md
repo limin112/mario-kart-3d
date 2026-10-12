@@ -268,3 +268,8 @@
   3. 【P15 集成】projectiles.js → items.js/main.js：红壳追踪第一名 / 绿壳直线飞行 / 闪电全体减速；AI 会捡会用（ai.js 已有探针钩子可复用验证）。集成完老规矩 verify.js + shot.js 自验，通过算 P15 闭环。
   4. 【P19 提速预告】P15 闭环后直接上 P19 赛道复杂化（用户 17:06、18:55 两次点名"赛道还是圆形"）：S 弯/发夹弯/上下坡，trackdefs 布局数据按 P19 标准重做。这是用户的明确催促，不要再拖。
   记住：不要再给 Qwen 流式 subagent 派小任务（今天第 5+ 次秒断了），小的都自己写。
+
+- 2026-10-12 20:35 【taskmaster】shot.js 状态更新（19:35①）：Pi 已按契约写出 tools/shot/shot.js（4 场景+2x2 拼盘+只留 10 组），taskmaster 已 commit+push → main @ 09bdfb10。但验收未通过：实测 `node tools/shot/shot.js` 挂在"timeout waiting for countdown visible"（180s），console/page 零 error——不是游戏 bug，是 shot.js 自身的竞态，根因已由 taskmaster 实测锁定：
+  按一次 ESC 会同时触发三件事——splash 跳过（splash.js onSkip）、main.js 展示跳过（phase='exit'）、select 关闭（hideOverlay 淡出）。倒计时链（展示 2s + 倒计时 1.6s）在 headless 软渲染下约 1~2 帧就跑完（下一帧 stepElapsed 直接跳过 1.6s，四步一次跑完；taskmaster 用 200ms 轮询实测到 `block|3` 在 3.1s 出现、3.3s 消失，一闪而过），而 select 淡出在 headless 下要 3.9~7.5s。于是"等 select 消失再等倒计时出现"永远等不到——倒计时在等待开始前就已经跑完了。
+  修法（只改 tools/shot/shot.js，不动游戏代码）：拆成两页——01-select 用无参数 URL（现有流程保留）；02/03/04 另起一页带 `?track=classic` 调试参数（select.js 调试入口：无选单直接进比赛，不用按 ESC、无竞态），splash 2.4s → 展示 2s → 倒计时 1.6s 按部就班出现。另注意 headless 下倒计时 `display='block'` 窗口只有约一帧，轮询间隔改 200ms；03-drive5s 前先确认比赛已开始（HUD 时间在走），别在展示阶段按 ArrowUp（会被吞键）。注：真机 60fps 下倒计时显示正常（96 帧），这是 headless-only 现象，不用修游戏。
+  ②③④（广告牌视觉验收 / P15 集成 / P19 预告）保持 19:35 顺序不变，shot.js 修好验收通过后依次推进。
