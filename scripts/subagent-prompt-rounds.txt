@@ -1,0 +1,48 @@
+你是游戏开发 agent 的并行 subagent。任务：P18 回合播报的横幅模块。
+
+先读 ~/workspace/mario-kart-3d/REQUIREMENTS.md、STATE.md、GUIDANCE.md（了解背景即可，不要改它们）。
+
+【文件白名单——严格】你只能创建/修改这两个文件：
+1. game/rounds.js（新建）
+2. scripts/HANDOFF-rounds.md（新建，交接文档）
+严禁碰其他任何文件，尤其 main.js / audio.js / hud / index.html / STATE.md / LOG.md / GUIDANCE.md / REQUIREMENTS.md / scripts/ 下其他文件。临时验证文件一律放 /tmp。
+
+【任务：新建 game/rounds.js — 回合播报横幅模块】
+导出两个函数（这是与主 agent 约定的接口，签名不许偏离）：
+
+  export function showRoundBanner(text, opts = {})
+    // opts = { final: false, duration: 1600 }
+    // 在屏幕中央显示大字横幅（如 "ROUND 2" / "FINAL LAP"），
+    // final:true 时用红金色警示风格 + 轻微脉动动画。
+  export function hideRoundBanner()
+    // 立即移除当前横幅（R 键重开时清残留用）。没有横幅时静默 no-op。
+
+实现要求：
+- 纯 DOM + 内联样式（document.createElement + cssText），零 import、零外部资源、
+  import 时零副作用（第一次调用 showRoundBanner 才创建元素）。
+- 横幅样式：position:fixed 屏幕正中（left:50% top:38% translate(-50%,-50%)），
+  z-index 9999，pointer-events:none，user-select:none。
+  字体大（clamp(40px, 9vw, 110px)）、font-weight 900、斜体感（transform skew 或 font-style）、
+  普通回合：金黄渐变文字（background linear-gradient + -webkit-background-clip:text +
+  -webkit-text-fill-color:transparent）+ 深色描边感（text-shadow 或 drop-shadow）；
+  final:true：红橙渐变 + CSS animation 脉动。
+- 动画：弹入（scale 2.2→1，约 0.25s ease-out，可用 CSS transition 或 animation）→ 保持 →
+  duration 毫秒后淡出缩小移除。总时长由 opts.duration 控制（缺省 1600ms）。
+- 重复调用 showRoundBanner 必须先取消上一次的定时器并移除旧横幅，不许叠加。
+- 所有路径零 console.error / 零异常；定时器回调里元素可能已被移除，要判空。
+- 中文注释写清接口契约。
+
+【验证（必须做，结果写进 HANDOFF）】
+1. 语法：cp game/rounds.js /tmp/rounds.mjs && node --check /tmp/rounds.mjs
+2. 真机：写一个 /tmp/rounds-test.html（import rounds.js，页面加载后依次
+   showRoundBanner('ROUND 1')、500ms 后 showRoundBanner('FINAL LAP', {final:true})、
+   再 500ms 后 hideRoundBanner()），用 tools/verify 里的 playwright-core 起
+   headless chromium 打开（http.server 起在 8902 端口，不要动 8901），
+   断言：横幅元素出现过（document.querySelector 到）、final 横幅带脉动样式、
+   hideRoundBanner 后元素为 null、console error 数组为空。截图 /tmp/rounds-banner.png。
+   验证完杀掉你起的 http.server，不留残留进程。
+
+【收尾】
+写 scripts/HANDOFF-rounds.md：做了什么、接口签名与行为说明（主 agent 要照着调用）、
+验证结果（node --check 输出、playwright 断言结果、零 error 确认）。
+最后用中文 2-3 行总结。

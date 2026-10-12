@@ -16,6 +16,7 @@
 //   playSlip()                             打滑：下行滑音 + 短促警报感
 //   playBoostPad()                         加速带：上行 whoosh + 嗖音
 //   playRev()                              引擎轰鸣轰油门（开屏动画用），~1.1s 两段式转速扫频
+//   playRoundFanfare(final)                P18 回合播报：final=false 三音上行号角；final=true 急促警报+下行哨音
 //   toggleMute() / setMuted(m) / isMuted() 静音开关（M 键），返回静音状态
 //
 // 红线：headless 浏览器里 AudioContext 可能永远 suspended 或创建失败——
@@ -225,6 +226,22 @@ export class AudioManager {
   playBoostPad() {
     this._noise(0.28, 0.35, 'bandpass', 350, 2800, 0);
     this._tone('triangle', 400, 1400, 0.22, 0.22, 0.02);
+  }
+
+  // P18 回合播报音效。final=false：三音上行号角（Round 1/2，方波有号角感，末音最长）；
+  // final=true：Final Lap 警报感——三声急促重复高音 + 尾段下行滑音（"最后一圈！"的紧迫）。
+  playRoundFanfare(final) {
+    if (final) {
+      this._tone('square', 988, 988, 0.09, 0.32, 0);
+      this._tone('square', 988, 988, 0.09, 0.32, 0.12);
+      this._tone('square', 988, 988, 0.09, 0.32, 0.24);
+      this._tone('sawtooth', 1245, 620, 0.42, 0.3, 0.36);
+      this._tone('square', 1568, 1568, 0.3, 0.26, 0.36);
+    } else {
+      this._tone('square', 659, 659, 0.11, 0.3, 0);
+      this._tone('square', 831, 831, 0.11, 0.3, 0.11);
+      this._tone('square', 1047, 1047, 0.26, 0.34, 0.22);
+    }
   }
 
   // 引擎轰鸣（开屏动画）：轰两脚油门。sawtooth 主振 + 低八度 triangle，

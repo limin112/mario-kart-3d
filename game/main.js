@@ -6,6 +6,7 @@ import { ParticleSystem } from './particles.js';
 import { createKart, createShowcaseKart, updateShowcaseKart, resetKartForRace } from './kart.js';
 import { AudioManager } from './audio.js';
 import { startSplash } from './splash.js';
+import { showRoundBanner } from './rounds.js';
 
 // ============ 全局状态 ============
 const state = {
@@ -711,6 +712,7 @@ async function gameLoop(time) {
             placeKartAtStartLine(playerKart, kartPhysics, track, 1);
             state.running = true;
             state.started = true;
+            announceRound('ROUND 1', false); // P18: 开赛播报
             kartPhysics.currentLapStart = gameTime;
             state.currentLapStart = kartPhysics.currentLapStart;
             countdownDone = true;
@@ -739,6 +741,7 @@ async function gameLoop(time) {
       countdownDone = true;
       state.running = true;
       state.started = true;
+      announceRound('ROUND 1', false); // P18: 开赛播报
       kartPhysics.currentLapStart = gameTime;
       state.currentLapStart = kartPhysics.currentLapStart;
     }
@@ -780,6 +783,15 @@ async function gameLoop(time) {
 
   renderer.render(scene, camera);
   requestAnimationFrame(gameLoop);
+}
+
+// ============ P18: 回合播报（大字横幅 + 号角音效） ============
+// 横幅由 rounds.js 自绘 DOM，音效经 audio.js（未 unlock 时安全 no-op）。
+function announceRound(text, isFinal) {
+  try {
+    showRoundBanner(text, { final: !!isFinal, duration: isFinal ? 2000 : 1600 });
+  } catch (e) { /* 横幅失败不影响比赛 */ }
+  audio.playRoundFanfare(!!isFinal);
 }
 
 // ============ 检查点与圈数检测 ============
@@ -827,6 +839,10 @@ function updateCheckpoints() {
       state.time = kartPhysics.totalTime;
       audio.stopEngine();
       showResults();
+    } else {
+      // P18: 回合播报——进第 2 圈报 ROUND 2，进第 3 圈（最后一圈）报 FINAL LAP
+      if (kartPhysics.lap === 1) announceRound('ROUND 2', false);
+      else if (kartPhysics.lap === 2) announceRound('FINAL LAP', true);
     }
   } else if (distToStart > 20) {
     // 远离起点线后重置标志
