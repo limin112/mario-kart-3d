@@ -1,0 +1,59 @@
+你是游戏开发 subagent，在 ~/workspace/mario-kart-3d/ 工作。用中文写总结。
+
+先按顺序读：REQUIREMENTS.md、STATE.md、GUIDANCE.md（只需快速浏览）。
+
+# 任务（只做一个文件）
+
+新建 `game/projectiles.js` —— P15 道具加深的弹体模块：红龟壳/绿龟壳 Shell 类 + 全屏闪电闪光。
+主 agent 会负责在 items.js 里调用，你**只写这一个新文件**，保证 API 契约一字不差。
+
+## API 契约（必须严格一致，主 agent 的代码按这个写）
+
+```js
+import * as THREE from 'three';
+
+export class Shell {
+  // opts = { type: 'red'|'green', position: THREE.Vector3, rotation: number, speed: number, lifetime: number }
+  // rotation 约定与 kart 相同：前进方向 = (-sin(rotation), 0, -cos(rotation))
+  constructor(scene, opts)
+  // 实例属性（外部会读）：
+  //   this.type     'red'|'green'
+  //   this.position THREE.Vector3 —— 每帧更新，外部直接读它做碰撞检测
+  //   this.radius = 1.6            碰撞半径（固定值）
+  //   this.active   初始 true；lifetime 耗尽时置 false 并 mesh.visible=false（不要自己 dispose）
+  //   this.mesh     THREE.Group，已 add 进 scene
+  update(dt, target = null)
+  // target = { position: THREE.Vector3 } 或 null。
+  // red：有 target 时朝目标转向追踪（偏航限速约 3.5 rad/s 平滑转向），速度恒定 opts.speed。
+  // green：直线飞，不看 target。
+  // 命中判定不在本类做（由调用方每帧读 this.position 判距离），Shell 只管飞。
+  // 两者：lifetime -= dt，<=0 时 active=false、mesh.visible=false。
+  // 每帧把 this.position 同步到 this.mesh.position；mesh 绕前进轴滚动（龟壳在地上滚的观感）。
+  dispose()  // scene.remove(this.mesh) + 遍历 dispose geometry/material，可安全重复调用
+}
+
+// 全屏白色闪电闪光：div 固定定位 inset:0、pointer-events:none、z-index 9999，
+// 白→透明淡出约 duration 秒后从 DOM 移除；重复调用互不干扰、判空安全。
+export function triggerLightningFlash(duration = 0.8) { }
+```
+
+## 造型（程序化低多边形，性能优先，每个壳总 draw call ≤ 4）
+- 红龟壳：红色球壳（SphereGeometry 压扁）+ 深色腹面 + 顶部小凸点；绿龟壳同理换绿 0x33cc44。
+- 离地高度 y≈0.35，飞行贴地。
+
+## 行为细节
+- 追踪转向：把目标方向角与当前 heading 做角度差归一化（-PI..PI），每帧最多转 3.5*dt 弧度。
+- red 无 target 时直线飞。
+- 不要 console.log（红线：零 console 输出）。
+- 除 three 外零 import；不碰 DOM 除 triggerLightningFlash 里创建 div。
+
+## 文件白名单（严格）
+你只能创建/修改：
+- game/projectiles.js（新建）
+- scripts/HANDOFF-projectiles.md（交接文档）
+严禁碰其他任何文件，尤其 STATE.md / LOG.md / GUIDANCE.md / REQUIREMENTS.md / scripts/ 下其他文件 / game/ 下其他文件。
+
+## 做完后
+1. 语法自检：`cp game/projectiles.js /tmp/proj.mjs && node --check /tmp/proj.mjs` 必须通过。
+2. 写 scripts/HANDOFF-projectiles.md：做了什么、API 与契约是否零偏离、node --check 结果。
+3. 最后用中文 2-3 行总结。

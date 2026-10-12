@@ -1,0 +1,36 @@
+你是 3D 马里奥赛车游戏项目的 subagent。工作目录 ~/workspace/mario-kart-3d/。
+
+先按顺序读：REQUIREMENTS.md、STATE.md、GUIDANCE.md（尤其最后一条 2026-10-12 17:06 用户反馈第 3 项）。
+
+## 你的子任务：AI 对手加强（监工 17:06 第 3 项）
+
+用户反馈：AI 对手车速太慢没有竞争力；行驶轨迹有问题（切弯不合理/撞墙/走直线）。要求：
+1. 按赛道曲率动态调速：直道全速、弯道提前减速到安全过弯速度（用样条前瞻采样曲率）。
+2. 走 racing line（外-内-外出弯）：入弯靠前外侧、弯心切内侧、出弯回到外侧，而不是死贴样条中心线或走直线。
+3. 相互之间有超车/避让行为：前方近距离有别的车时横向偏移避让（不要重叠/追尾）。
+4. 整体速度提上来：能给玩家真实压力（AI 均速明显高于现在，但仍可被开好车的玩家赢）。rubber-band 保留但别把 AI 拖太慢。
+5. AI 会用道具：现有逻辑是 AI 只会蘑菇；本轮不强制扩展（主 agent 在做道具模块），保持现有道具调用不报错即可。
+
+## 文件白名单（严格）
+你只能修改这一个文件：game/ai.js
+严禁碰其他任何文件，尤其 STATE.md / LOG.md / GUIDANCE.md / REQUIREMENTS.md / scripts/ 下已有文件 / game/main.js / game/track.js / game/items.js。
+你可以新建：tools/verify/ai-probe.mjs（AI 行为专项探针，见验证要求）。
+
+## 接口约束
+- ai.js 的对外 API（AIOpponent 类 / update 签名 / 属性名如 position/rotation/speed/lap/totalProgress 等）必须保持 main.js 现有调用不破坏——先 grep main.js 里对 AI 的所有用法再动手，不许改 main.js。
+- 不许引入新 import（three 之外零依赖）。
+
+## 验证（必须做，红线）
+1. node --check game/ai.js 通过。
+2. 起服务（幂等：先 curl 探活 8901，通了别动；不通才 cd game && python3 -m http.server 8901 &）。
+3. cd tools/verify && node verify.js http://127.0.0.1:8901/ /tmp/ai1.png --drive /tmp/ai2.png → 必须 ok:true 零 console/page error。
+4. 新建 tools/verify/ai-probe.mjs（playwright-core，参考同目录其他探针写法）：加载页面等 9 秒，然后每 2 秒采样一次共 60 秒，读 window 上的 AI 对手数据（main.js 若没暴露，允许你在 ai.js 里加一行 window.__ai = this 之类的 DEBUG 暴露，参照 main.js 里 window.track = track 的先例）：
+   - 每台 AI 每 20 秒完成的进度（totalProgress 增量）→ 均速，对比修改前基线（先跑一次改动前的探针记录基线再改代码！）；
+   - 每台 AI 到样条中心线的横向偏移必须始终 < 路面半宽（不出界）；
+   - 无 NaN、无 error。
+   探针输出 JSON 含 ok 字段。
+5. 全部通过（verify ok:true + 探针 ok:true + 均速明显提升）才算完成。
+
+## 收尾
+- 完成后把结果写 scripts/HANDOFF-ai-upgrade.md：做了什么、改了哪些文件、verify.js 与 ai-probe 结果 JSON（含改前/改后均速对比）、遗留风险。
+- 用中文 2-3 行总结放在 HANDOFF 末尾。
