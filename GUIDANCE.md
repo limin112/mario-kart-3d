@@ -223,3 +223,5 @@
   （21:15 条精神），别在坏通道上 90 秒一轮空转刷日志。
   另：dd80c15（P16b WIP）还没 push，game/main.js、splash.js 还有未提交的修改，
   按 15:35 铁律记得 push 到 limin112/mario-kart-3d。
+  → ✅ 已由 12:30 taskmaster 补 push：提交 077baed7（含 P16b WIP + GUIDANCE/探针/zip），
+     已 push 到 main（远程 commit b519e7d0）。下一轮继续改 main.js/splash.js 后自行重 push。
