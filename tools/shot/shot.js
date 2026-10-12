@@ -70,11 +70,11 @@ function pruneOld(outRoot, keep = 10) {
     report.steps.push(`shot ${name} ok`);
     return file;
   };
-  const waitFor = async (fn, timeoutMs, what) => {
+  const waitFor = async (pg, fn, timeoutMs, what) => {
     const t0 = Date.now();
     while (Date.now() - t0 < timeoutMs) {
-      if (await page.evaluate(fn).catch(() => false)) { report.steps.push(`${what} after ${((Date.now() - t0) / 1000).toFixed(1)}s`); return true; }
-      await page.waitForTimeout(200);
+      if (await pg.evaluate(fn).catch(() => false)) { report.steps.push(`${what} after ${((Date.now() - t0) / 1000).toFixed(1)}s`); return true; }
+      await pg.waitForTimeout(200);
     }
     throw new Error(`timeout waiting for ${what}`);
   };
@@ -86,7 +86,7 @@ function pruneOld(outRoot, keep = 10) {
   try {
     // ---- 01 选单界面（默认无参数页）----
     await page.goto(args.url, { waitUntil: 'load', timeout: 30000 });
-    await waitFor(() => {
+    await waitFor(page, () => {
       const el = document.getElementById('select-title');
       return !!el && !!el.offsetParent;
     }, 60000, 'select overlay');
@@ -94,7 +94,7 @@ function pruneOld(outRoot, keep = 10) {
 
     // ---- 取消选单，进入默认比赛（ESC = hideOverlay，不 reload）----
     await page.keyboard.press('Escape');
-    await waitFor(() => {
+    await waitFor(page, () => {
       const el = document.getElementById('select-title');
       return !el || !el.offsetParent;
     }, 20000, 'select dismissed');
@@ -104,16 +104,24 @@ function pruneOld(outRoot, keep = 10) {
     page2.on('console', (m) => { if (m.type() === 'error') report.consoleErrors.push(m.text().slice(0, 300)); });
     page2.on('pageerror', (e) => report.pageErrors.push(String(e).slice(0, 300)));
 
-    await page2.goto(debugUrl.toString(), { waitUntil: 'load', timeout: 60000 });
+    await page2.goto(debugUrl.toString(), { waitUntil: 'domcontentloaded', timeout: 60000 });
 
-    // 等倒计时出现（splash 2.4s + 展示 2s + 倒计时 1.6s ≈ 6s，headless 只显示约 1 帧）
-    await waitFor(() => {
+    // headless 软渲染下倒计时整段只占约 1 帧（stepElapsed 一次跳完 1.6s），
+    // 轮询永远追不上——在倒计时链启动（splash 2.4s + 展示 2s ≈ 4.4s）之前，
+    // 先给 #countdown 挂 MutationObserver 把"出现过"记到 window.__cdSeen。
+    await page2.evaluate(() => {
+      window.__cdSeen = false;
       const el = document.getElementById('countdown');
-      return !!el && el.style.display === 'block';
-    }, 30000, 'countdown visible (debug)');
+      if (el && el.style.display === 'block') window.__cdSeen = true;
+      new MutationObserver(() => {
+        if (el.style.display === 'block') window.__cdSeen = true;
+      }).observe(el, { attributes: true, attributeFilter: ['style'] });
+    });
+
+    await waitFor(page2, () => window.__cdSeen === true, 40000, 'countdown seen (observer)');
 
     // 等倒计时消失（GO 结束 = 发车）
-    await waitFor(() => {
+    await waitFor(page2, () => {
       const el = document.getElementById('countdown');
       return !!el && el.style.display === 'none';
     }, 30000, 'countdown finished (GO) debug');
@@ -121,11 +129,11 @@ function pruneOld(outRoot, keep = 10) {
     // ---- 02 发车视角 ----
     await shot('02-start');
 
-    // ---- 03 驾驶 5 秒后（先确认比赛已开始：HUD 时间在走）----
-    await waitFor(() => {
-      const el = document.getElementById('time');
+    // ---- 03 驾驶 5 秒后（先确认比赛已开始：HUD 总时间在走。注意 HUD 没有 #time，是 #totalTime）----
+    await waitFor(page2, () => {
+      const el = document.getElementById('totalTime');
       return !!el && parseFloat(el.textContent) > 0.5;
-    }, 10000, 'race started (HUD time moving)');
+    }, 15000, 'race started (HUD totalTime moving)');
     await page2.keyboard.down('ArrowUp');
     await page2.waitForTimeout(5000);
     await page2.keyboard.up('ArrowUp');
@@ -158,10 +166,7 @@ function pruneOld(outRoot, keep = 10) {
     await shot('04-overhead');
     await page2.evaluate(() => { window.__ovStop = true; });
 
-    await page2.close();
-    await page.close();
-
-    // ---- 00 2x2 拼盘（页内 canvas 合成，零外部依赖）----
+    // ---- 00 2x2 拼盘（页内 canvas 合成，零外部依赖；必须在关页之前跑）----
     const names = ['01-select', '02-start', '03-drive5s', '04-overhead'];
     const b64s = names.map((n) => fs.readFileSync(report.shots[n]).toString('base64'));
     const gridB64 = await page.evaluate(async (imgs) => {
@@ -178,6 +183,9 @@ function pruneOld(outRoot, keep = 10) {
     fs.writeFileSync(gridFile, Buffer.from(gridB64, 'base64'));
     report.shots['00-grid'] = gridFile;
     report.steps.push('shot 00-grid ok');
+
+    await page2.close();
+    await page.close();
   } catch (e) {
     report.fatal = String(e && e.message ? e.message : e).slice(0, 300);
   } finally {
