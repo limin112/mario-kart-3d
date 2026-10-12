@@ -37,6 +37,12 @@ for (const layout of ['classic', 'dune', 'glacier']) {
   await page.goto(BASE + '?track=' + layout, { waitUntil: 'load' });
   await page.waitForFunction(() => window.__mk && window.__mk.track, { timeout: 30000 });
   await page.waitForTimeout(1500);
+  // 截图等到比赛真正开始（过了 splash/展示/倒计时），否则拍到深色舞台
+  await page.waitForFunction(() => {
+    const el = document.getElementById('totalTime');
+    return el && !/^0[.,]0/.test((el.textContent || '').trim());
+  }, { timeout: 40000 }).catch(() => {});
+  await page.waitForTimeout(500);
 
   const info = await page.evaluate(() => {
     const t = window.__mk.track;
