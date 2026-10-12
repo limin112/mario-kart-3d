@@ -408,6 +408,7 @@ class Track {
     this._createRoad();
     this._createShoulders();
     this._createGuardrails();
+    this._createHairpinBarriers();
     this._createStartLine();
     this._createTrees();
     this._createGrandstands();
@@ -670,6 +671,113 @@ class Track {
       this.scene.add(railGroup);
       this.guardrails.push(railGroup);
     }
+  }
+
+  _createHairpinBarriers() {
+    // P19b：发夹弯外侧连续护栏。现有护栏是 1m 段、3m 间距（虚线），发夹弯外侧
+    // 有飞出风险。判定：控制点偏转角 >90° 为发夹顶点（classic 最大 77° 不触发，
+    // dune P3-P5 / glacier P1-P2、P8 触发）；每段护栏区域 = 顶点相邻控制点中点之间，
+    // 两端各延伸 10%（合计 ≈ 弯道弧长 ×1.2），沿弯道外侧铺连续加高护墙（InstancedMesh）。
+    const P = this.layout.controlPoints.map(([x, z]) => new THREE.Vector3(x, 0, z));
+    const n = P.length;
+    if (n < 6) return;
+
+    // 1000 点样条采样，用于把世界坐标反查为 t
+    const K = 1000;
+    const samples = [];
+    for (let i = 0; i < K; i++) samples.push(this.spline.getPointAt(i / K));
+    const findT = (pt) => {
+      let best = 0, bd = Infinity;
+      for (let i = 0; i < K; i++) {
+        const d = samples[i].distanceToSquared(pt);
+        if (d < bd) { bd = d; best = i; }
+      }
+      return best / K;
+    };
+
+    // 1) 找发夹顶点：偏转角 >90°，带转向（cr2d>0=左弯，外侧在右 side=-1；反之 side=+1）
+    const sections = [];
+    for (let i = 0; i < n; i++) {
+      const a = P[i].clone().sub(P[(i - 1 + n) % n]);
+      const b = P[(i + 1) % n].clone().sub(P[i]);
+      const cr = a.x * b.z - a.z * b.x; // 2D 叉积（x,z 平面）
+      const ang = Math.abs(Math.atan2(cr, a.x * b.x + a.z * b.z)); // 偏转角 ∈ [0, π]
+      if (ang < Math.PI / 2) continue; // <90° 不算发夹
+      const m1 = P[(i - 1 + n) % n].clone().add(P[i]).multiplyScalar(0.5);
+      const m2 = P[i].clone().add(P[(i + 1) % n]).multiplyScalar(0.5);
+      let t0 = findT(m1);
+      const t1 = findT(m2);
+      // 区域沿前进方向 t0→t1（可能跨 0 点环绕）
+      let span = (t1 - t0 + 1) % 1;
+      if (span < 0.005) continue;
+      const ext = span * 0.1; // 两端各 +10% → 总长 ×1.2
+      t0 = (t0 - ext + 1) % 1;
+      sections.push({ t0, span: span + 2 * ext, side: cr > 0 ? -1 : 1, apex: i });
+    }
+    if (sections.length === 0) { this.hairpinSections = []; return; }
+
+    // 2) 沿每段外侧铺连续护墙实例（1.2m 步长、箱体 1.5m 长重叠无缝）
+    const roadHalf = this.cfg.roadWidth;
+    const offset = roadHalf + this.cfg.shoulderWidth + this.cfg.guardrailOffset + 0.45;
+    const H = 1.5; // 比常规护栏(1.2m)加高
+    const step = 1.2;
+    const matrices = [];
+    const pos = new THREE.Vector3();
+    const quat = new THREE.Quaternion();
+    const scl = new THREE.Vector3(0.3, H, 1.6);
+    const up = new THREE.Vector3(0, 1, 0);
+    for (const sec of sections) {
+      // 实例沿外侧偏移曲线等弧长布置：发夹顶点中心线曲率半径小（~4m），
+      // 外侧偏移曲线弧长局部拉伸可达 ~5×，若沿中心线等步长会在顶点处拉开缝隙。
+      const M = 240; // 本段密采样数（求偏移曲线弧长用）
+      const ts = new Float64Array(M + 1);
+      const ppts = [];
+      const cum = new Float64Array(M + 1);
+      for (let j = 0; j <= M; j++) {
+        const tu = sec.t0 + (j / M) * sec.span; // 连续参数，可 >1（跨 0 环绕）
+        const t = ((tu % 1) + 1) % 1;
+        const pt = this.spline.getPointAt(t);
+        const tangent = this.spline.getTangentAt(t).normalize();
+        const normal = new THREE.Vector3(-tangent.z, 0, tangent.x);
+        ts[j] = tu;
+        ppts.push(pt.clone().addScaledVector(normal, sec.side * offset));
+        cum[j] = j === 0 ? 0 : cum[j - 1] + ppts[j].distanceTo(ppts[j - 1]);
+      }
+      const arc = cum[M];
+      const count = Math.max(2, Math.round(arc / step));
+      const spacing = arc / count;
+      let k = 0;
+      for (let j = 0; j < count; j++) {
+        const target = (j + 0.5) * spacing;
+        while (k < M - 1 && cum[k + 1] < target) k++;
+        const segLen = cum[k + 1] - cum[k] || 1;
+        const f = Math.min(1, Math.max(0, (target - cum[k]) / segLen));
+        const t = (((ts[k] + (ts[k + 1] - ts[k]) * f) % 1) + 1) % 1;
+        const pt = this.spline.getPointAt(t);
+        const tangent = this.spline.getTangentAt(t).normalize();
+        const normal = new THREE.Vector3(-tangent.z, 0, tangent.x);
+        pos.copy(pt).addScaledVector(normal, sec.side * offset);
+        pos.y = H / 2;
+        quat.setFromAxisAngle(up, Math.atan2(tangent.x, tangent.z)); // 局部 +Z 对齐切线
+        const m = new THREE.Matrix4().compose(pos, quat, scl);
+        matrices.push(m);
+      }
+    }
+
+    const geo = new THREE.BoxGeometry(1, 1, 1);
+    const mat = new THREE.MeshStandardMaterial({ color: 0xe8b923, roughness: 0.55, metalness: 0.3 });
+    const wall = new THREE.InstancedMesh(geo, mat, matrices.length);
+    matrices.forEach((m, i) => wall.setMatrixAt(i, m));
+    wall.instanceMatrix.needsUpdate = true;
+    wall.castShadow = true;
+    wall.receiveShadow = true;
+    this.scene.add(wall);
+    this.guardrails.push(wall); // 复用护栏 dispose 遍历清理
+    this.hairpinSections = sections.map(s => ({
+      apex: s.apex, side: s.side,
+      t0: +s.t0.toFixed(3), t1: +((s.t0 + s.span) % 1).toFixed(3),
+      arcM: +(s.span * this.trackLength).toFixed(1),
+    }));
   }
 
   _createStartLine() {
