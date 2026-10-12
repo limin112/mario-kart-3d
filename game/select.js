@@ -15,12 +15,11 @@ function getInitialSelection() {
   const urlTrack = params.get('track');
   const urlTheme = params.get('theme');
 
-  if (urlTrack && TRACK_LAYOUTS[urlTrack]) {
-    return {
-      track: urlTrack,
-      theme: urlTheme && TRACK_THEMES[urlTheme] ? urlTheme : TRACK_LAYOUTS[urlTrack].theme,
-      fromUrl: true,
-    };
+  // 调试入口：URL 里显式带了 track 或 theme 参数就不再弹选单，直接进比赛
+  if (urlTrack || urlTheme) {
+    const track = urlTrack && TRACK_LAYOUTS[urlTrack] ? urlTrack : 'classic';
+    const theme = urlTheme && TRACK_THEMES[urlTheme] ? urlTheme : TRACK_LAYOUTS[track].theme;
+    return { track, theme, fromUrl: true };
   }
 
   // 尝试读取上次保存
@@ -52,13 +51,13 @@ function buildUrl(track, theme) {
   return `?${params.toString()}`;
 }
 
-/** 创建选项卡片 DOM */
-function createCard(layout, themeKey, isSelected, onSelect) {
+/** 创建选项卡片 DOM（trackKey 是 TRACK_LAYOUTS 的键，layout.name 仅作显示） */
+function createCard(trackKey, layout, themeKey, isSelected, onSelect) {
   const theme = getTheme(themeKey);
   const card = document.createElement('button');
   card.type = 'button';
   card.className = `track-card ${isSelected ? 'selected' : ''}`;
-  card.setAttribute('data-track', layout.name);
+  card.setAttribute('data-track', trackKey);
   card.setAttribute('data-theme', themeKey);
   card.innerHTML = `
     <div class="card-preview" style="background: linear-gradient(135deg, ${theme.sceneBg ? '#' + theme.sceneBg.toString(16).padStart(6, '0') : '#87ceeb'}, ${theme.ground ? '#' + theme.ground.toString(16).padStart(6, '0') : '#3a5f0b'});"></div>
@@ -69,26 +68,31 @@ function createCard(layout, themeKey, isSelected, onSelect) {
     </div>
     <div class="card-check" aria-hidden="true">✓</div>
   `;
-  card.addEventListener('click', () => onSelect(layout.name, themeKey));
+  card.addEventListener('click', () => onSelect(trackKey, themeKey));
   card.addEventListener('keydown', (e) => {
     if (e.key === 'Enter' || e.key === ' ') {
       e.preventDefault();
-      onSelect(layout.name, themeKey);
+      onSelect(trackKey, themeKey);
     }
   });
   return card;
 }
 
-/** 显示选单模态框 */
+/**
+ * 显示选单（非阻塞覆盖层：游戏已在底层按默认参数运行）。
+ * 确认：写入 URL 参数；若与正在运行的默认（classic/classic）不同才 reload。
+ * 取消：仅关闭选单，底层默认比赛继续。
+ * onConfirm(track, theme) 可选回调（供外部集成用）。
+ */
 export function showTrackSelect(onConfirm) {
   const initial = getInitialSelection();
   let currentTrack = initial.track;
   let currentTheme = initial.theme;
 
-  // 如果是从 URL 直接进入（调试入口），直接确认不显示选单
+  // 如果是从 URL 直接进入（调试入口），不显示选单
   if (initial.fromUrl) {
-    onConfirm(currentTrack, currentTheme);
-    return;
+    if (onConfirm) onConfirm(currentTrack, currentTheme);
+    return null;
   }
 
   const overlay = document.createElement('div');
@@ -118,7 +122,7 @@ export function showTrackSelect(onConfirm) {
     for (const [trackKey, layout] of Object.entries(TRACK_LAYOUTS)) {
       // 建议主题卡片（放第一个）
       const suggestedTheme = layout.theme;
-      const suggestedCard = createCard(layout, suggestedTheme, trackKey === currentTrack && suggestedTheme === currentTheme, (t, th) => {
+      const suggestedCard = createCard(trackKey, layout, suggestedTheme, trackKey === currentTrack && suggestedTheme === currentTheme, (t, th) => {
         currentTrack = t;
         currentTheme = th;
         updateSelection();
@@ -128,7 +132,7 @@ export function showTrackSelect(onConfirm) {
       // 其他主题作为备选（仅当与建议主题不同时）
       for (const themeKey of Object.keys(TRACK_THEMES)) {
         if (themeKey === suggestedTheme) continue;
-        const altCard = createCard(layout, themeKey, trackKey === currentTrack && themeKey === currentTheme, (t, th) => {
+        const altCard = createCard(trackKey, layout, themeKey, trackKey === currentTrack && themeKey === currentTheme, (t, th) => {
           currentTrack = t;
           currentTheme = th;
           updateSelection();
@@ -148,20 +152,33 @@ export function showTrackSelect(onConfirm) {
     btnStart.disabled = false;
   }
 
+  function hideOverlay() {
+    document.removeEventListener('keydown', handleKey);
+    overlay.classList.remove('visible');
+    setTimeout(() => overlay.remove(), 350);
+  }
+
   function confirm() {
+    if (overlay._done) return;
+    overlay._done = true;
     saveSelection(currentTrack, currentTheme);
-    const url = buildUrl(currentTrack, currentTheme);
-    // 使用 replaceState 避免历史记录污染，然后 reload 让 main.js 读取新参数
-    history.replaceState(null, '', url);
-    onConfirm(currentTrack, currentTheme);
-    // 直接 reload 让现有 main.js 逻辑自然接管
-    location.reload();
+    // replaceState 避免历史记录污染；R 重开（location.reload）会带上所选参数
+    history.replaceState(null, '', buildUrl(currentTrack, currentTheme));
+    if (onConfirm) onConfirm(currentTrack, currentTheme);
+    // 底层游戏正以 classic/classic 运行：选了默认就不必 reload
+    if (currentTrack === 'classic' && currentTheme === 'classic') {
+      hideOverlay();
+    } else {
+      location.reload();
+    }
   }
 
   function cancel() {
-    // 使用默认（经典）不保存
-    onConfirm('classic', 'classic');
-    location.reload();
+    if (overlay._done) return;
+    overlay._done = true;
+    // 使用默认（经典草原）继续：不保存、不 reload，仅关闭选单
+    if (onConfirm) onConfirm('classic', 'classic');
+    hideOverlay();
   }
 
   btnStart.addEventListener('click', confirm);
@@ -174,11 +191,6 @@ export function showTrackSelect(onConfirm) {
   };
   document.addEventListener('keydown', handleKey);
 
-  // 清理函数
-  overlay._cleanup = () => {
-    document.removeEventListener('keydown', handleKey);
-  };
-
   renderGrid();
   document.body.appendChild(overlay);
 
@@ -186,6 +198,8 @@ export function showTrackSelect(onConfirm) {
   requestAnimationFrame(() => {
     overlay.classList.add('visible');
   });
+
+  return { confirm, cancel, hide: hideOverlay };
 }
 
 /** 样式注入（模块加载时自动注入） */
@@ -403,3 +417,7 @@ style.textContent = `
 }
 `;
 document.head.appendChild(style);
+
+// 自动启动：本模块作为 index.html 第一个 module 脚本执行；
+// 游戏（main.js）随后照常启动，选单以覆盖层形式叠在上面，互不阻塞。
+showTrackSelect();
