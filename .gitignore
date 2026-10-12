@@ -7,3 +7,7 @@ scripts/usage.log
 scripts/loop-runs.log
 scripts/daemon.log
 .DS_Store
+scripts/*.pid
+scripts/circuit-breaker.state
+scripts/subagent-*.out
+scripts/subagent-*.pid
