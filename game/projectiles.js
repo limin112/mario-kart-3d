@@ -114,7 +114,8 @@ export class Shell {
     // 前进
     this.position.x += -Math.sin(this.rotation) * this.speed * dt;
     this.position.z += -Math.cos(this.rotation) * this.speed * dt;
-    this.position.y = SHELL_Y;
+    // P19c：坡道上贴地飞行——若外部提供 surfaceFn（track.getSurfaceY），y 跟路面高程
+    this.position.y = (this.surfaceFn ? this.surfaceFn(this.position) : 0) + SHELL_Y;
 
     // 寿命
     this.lifetime -= dt;

@@ -531,7 +531,7 @@ export class PlayerItemManager {
       const info = this.track.getTrackInfoAt(t);
       const offset = (Math.random() - 0.5) * (ITEM_CONFIG.boxCount * 0.5);
       const pos = info.position.clone().addScaledVector(info.normal, offset);
-      pos.y = ITEM_CONFIG.boxHeight;
+      pos.y = info.position.y + ITEM_CONFIG.boxHeight; // P19c：跟路面高程
 
       const rotation = Math.atan2(info.tangent.x, info.tangent.z);
       const box = new ItemBox(this.scene, this.track, pos, rotation);
@@ -711,7 +711,7 @@ export class PlayerItemManager {
       Math.cos(this.kartPhysics.rotation)
     );
     const pos = this.kartPhysics.position.clone().addScaledVector(behind, 2.5);
-    pos.y = 0.05;
+    pos.y = this.kartPhysics.position.y + 0.05; // P19c：坡上出生贴住路面高程
 
     const banana = new Banana(this.scene, pos, this.kartPhysics.rotation, this);
     this.bananas.push(banana);
@@ -743,6 +743,7 @@ export class PlayerItemManager {
       lifetime: ITEM_CONFIG.items.red_shell.lifetime,
     });
     shell.target = target;
+    shell.surfaceFn = (p) => this.track.getSurfaceY(p); // P19c：坡上贴地
     this.shells = this.shells || [];
     this.shells.push(shell);
 
@@ -768,6 +769,7 @@ export class PlayerItemManager {
       speed: ITEM_CONFIG.items.green_shell.speed,
       lifetime: ITEM_CONFIG.items.green_shell.lifetime,
     });
+    shell.surfaceFn = (p) => this.track.getSurfaceY(p); // P19c：坡上贴地
     this.shells = this.shells || [];
     this.shells.push(shell);
 
@@ -1119,6 +1121,7 @@ export class AIItemManager {
       lifetime: ITEM_CONFIG.items.red_shell.lifetime,
     });
     shell.target = target;
+    shell.surfaceFn = (p) => this.track.getSurfaceY(p); // P19c：坡上贴地
     this.shells.push(shell);
 
     if (this.audio && this.audio.playShell) {
@@ -1143,6 +1146,7 @@ export class AIItemManager {
       speed: ITEM_CONFIG.items.green_shell.speed,
       lifetime: ITEM_CONFIG.items.green_shell.lifetime,
     });
+    shell.surfaceFn = (p) => this.track.getSurfaceY(p); // P19c：坡上贴地
     this.shells.push(shell);
 
     if (this.audio && this.audio.playShell) {

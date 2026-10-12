@@ -385,7 +385,11 @@ class Track {
     this.layout = TRACK_LAYOUTS[layoutName] || TRACK_LAYOUTS.classic;
     this.cfg = {
       ...TRACK_CONFIG,
-      controlPoints: this.layout.controlPoints.map(([x, z]) => new THREE.Vector3(x, 0, z)),
+      // P19c：控制点 y 取布局 elevation 缓坡数据（负值钳到 0）+ 0.15m 抬高偏置：
+      // CatmullRom 在相邻控制点间会向下过冲（实测最大 ~0.11m），不加偏置则路面
+      // 最低处会沉进地面平面（y=0）被遮挡。CatmullRom 各分量独立插值，
+      // 加 y 不改变 x/z 平面路径（布局零回归）。
+      controlPoints: this.layout.controlPoints.map(([x, z], i) => new THREE.Vector3(x, Math.max(0, this.layout.elevation?.[i] ?? 0) + 0.15, z)),
       roadWidth: this.layout.roadWidth || TRACK_CONFIG.roadWidth,
     };
     // P14：主题配色（纯数据，见 themes.js；未知名字兜底 classic，零视觉回归）
@@ -444,8 +448,8 @@ class Track {
       // 左右两个顶点
       const left = pt.clone().addScaledVector(normal, halfWidth);
       const right = pt.clone().addScaledVector(normal, -halfWidth);
-      left.y = 0.01; // 略高于地面避免 z-fighting
-      right.y = 0.01;
+      left.y = pt.y + 0.01; // 贴路面高程（P19c），略高于坡面避免 z-fighting
+      right.y = pt.y + 0.01;
 
       const idx = positions.length / 3;
       positions.push(left.x, left.y, left.z, right.x, right.y, right.z);
@@ -506,8 +510,8 @@ class Track {
       const left = pt.clone().addScaledVector(normal, halfWidth);
       const right = pt.clone().addScaledVector(normal, -halfWidth);
       // P13: 抬高到路肩(0.04)之上，避免与路面/路肩共面闪烁
-      left.y = 0.06;
-      right.y = 0.06;
+      left.y = pt.y + 0.06; // P19c：跟路面高程
+      right.y = pt.y + 0.06;
 
       linePositions[0].push(left.x, left.y, left.z);
       linePositions[1].push(right.x, right.y, right.z);
@@ -544,8 +548,8 @@ class Track {
         const inner = pt.clone().addScaledVector(normal, side * roadHalf);
         const outer = pt.clone().addScaledVector(normal, side * (roadHalf + shoulderW));
         // P13: 原来 y=0 与地面完全共面导致红白路肩 Z-fighting 闪烁；抬高 4cm
-        inner.y = 0.04;
-        outer.y = 0.04;
+        inner.y = pt.y + 0.04; // P19c：跟路面高程
+        outer.y = pt.y + 0.04;
 
         const idx = positions.length / 3;
         positions.push(inner.x, inner.y, inner.z, outer.x, outer.y, outer.z);
@@ -615,7 +619,7 @@ class Track {
         const normal = new THREE.Vector3(-tangent.z, 0, tangent.x);
 
         const pos = pt.clone().addScaledVector(normal, side * (roadHalf + shoulderW + guardrailOffset));
-        pos.y = guardrailHeight / 2;
+        pos.y = pt.y + guardrailHeight / 2; // P19c：跟路面高程
 
         const rail = new THREE.Mesh(railGeo, railMat);
         rail.position.copy(pos);
@@ -634,7 +638,7 @@ class Track {
         const normal = new THREE.Vector3(-tangent.z, 0, tangent.x);
 
         const pos = pt.clone().addScaledVector(normal, side * (roadHalf + shoulderW + guardrailOffset));
-        pos.y = (guardrailHeight + 0.3) / 2;
+        pos.y = pt.y + (guardrailHeight + 0.3) / 2; // P19c：跟路面高程
 
         const post = new THREE.Mesh(postGeo, postMat);
         post.position.copy(pos);
@@ -757,7 +761,7 @@ class Track {
         const tangent = this.spline.getTangentAt(t).normalize();
         const normal = new THREE.Vector3(-tangent.z, 0, tangent.x);
         pos.copy(pt).addScaledVector(normal, sec.side * offset);
-        pos.y = H / 2;
+        pos.y = pt.y + H / 2; // P19c：跟路面高程
         quat.setFromAxisAngle(up, Math.atan2(tangent.x, tangent.z)); // 局部 +Z 对齐切线
         const m = new THREE.Matrix4().compose(pos, quat, scl);
         matrices.push(m);
@@ -1473,8 +1477,8 @@ class Track {
           const left = pt.clone().addScaledVector(normal, boostWidth / 2);
           const right = pt.clone().addScaledVector(normal, -boostWidth / 2);
           // P13: 抬高，与路面拉开 4cm，避免远距闪烁
-          left.y = 0.05;
-          right.y = 0.05;
+          left.y = pt.y + 0.05; // P19c：跟路面高程
+          right.y = pt.y + 0.05;
 
           const idx = positions.length / 3;
           positions.push(left.x, left.y, left.z, right.x, right.y, right.z);
@@ -1529,7 +1533,7 @@ class Track {
       });
       const plane = new THREE.Mesh(geo, mat);
       plane.position.copy(pt);
-      plane.position.y = 1;
+      plane.position.y = pt.y + 1; // P19c：检查点跟路面高程
       plane.lookAt(pt.clone().add(tangent));
       plane.rotation.y += Math.PI / 2;
 
@@ -1567,6 +1571,15 @@ class Track {
     }
 
     return { distance: minDist, t: bestT, point: bestPoint, tangent: bestTangent, normal: bestNormal };
+  }
+
+  /**
+   * P19c：给定世界坐标处的路面高程（样条最近点的 y）。
+   * 卡丁车每帧调用一次贴地；水平偏移由调用方保证（街机物理本身 2D）。
+   */
+  getSurfaceY(position) {
+    const { point } = this.getClosestPoint(position);
+    return point.y;
   }
 
   /**
@@ -1695,7 +1708,7 @@ class Track {
     const info = this.getTrackInfoAt(u);
     
     const position = info.position.clone().addScaledVector(info.normal, lateralOffset);
-    position.y = 0.5;
+    position.y = info.position.y + 0.5; // P19c：出生点跟路面高程
     const rotation = Math.atan2(info.tangent.x, info.tangent.z);
     
     // 验证是否在路面内（到中心线距离 < 路面半宽 - 1 米安全边距）

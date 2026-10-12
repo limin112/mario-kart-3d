@@ -415,6 +415,9 @@ function updatePhysics(dt) {
   p.position.x = THREE.MathUtils.clamp(p.position.x, -bound, bound);
   p.position.z = THREE.MathUtils.clamp(p.position.z, -bound, bound);
 
+  // P19c：车身 y 跟随路面高程（缓坡）
+  p.position.y = track.getSurfaceY(p.position);
+
   // 同步到 Three.js 对象
   playerKart.position.copy(p.position);
   playerKart.rotation.y = p.rotation;

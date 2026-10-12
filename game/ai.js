@@ -349,6 +349,9 @@ class AIKart {
     const bound = 240;
     this.position.x = THREE.MathUtils.clamp(this.position.x, -bound, bound);
     this.position.z = THREE.MathUtils.clamp(this.position.z, -bound, bound);
+
+    // P19c：车身 y 跟随路面高程（缓坡）
+    this.position.y = this.track.getSurfaceY(this.position);
     
     // 同步模型
     this.mesh.position.copy(this.position);
