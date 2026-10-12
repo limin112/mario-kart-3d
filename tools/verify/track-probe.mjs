@@ -104,8 +104,10 @@ try {
     });
     fs.writeFileSync(`${OUT}/track-p14b-${name}.png`, buf);
     const dataUrl = 'data:image/png;base64,' + buf.toString('base64');
-    const gl_ = await avgRows(analysisPage, dataUrl, 0.60, 0.75, 0.0, 0.12);
-    const gr_ = await avgRows(analysisPage, dataUrl, 0.60, 0.75, 0.88, 1.0);
+    // 地面签名采样带取 0.50~0.60：0.60~0.75 在 classic 出生视角被起点红白路肩/看台
+    // 覆盖（红主导误判），0.50~0.60 三布局均为纯地面（实测 classic g / dune r / glacier b）
+    const gl_ = await avgRows(analysisPage, dataUrl, 0.50, 0.60, 0.0, 0.12);
+    const gr_ = await avgRows(analysisPage, dataUrl, 0.50, 0.60, 0.88, 1.0);
     const ground = [(gl_[0] + gr_[0]) / 2, (gl_[1] + gr_[1]) / 2, (gl_[2] + gr_[2]) / 2].map((v) => +v.toFixed(1));
     report.layouts[name] = { info, ground, errors: errs };
     if (errs.length) report.errors.push(`${name}: ${errs.join(' | ')}`);
