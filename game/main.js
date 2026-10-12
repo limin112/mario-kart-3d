@@ -213,6 +213,8 @@ setupShowcaseScene();
 // ============ 赛道系统 (P2) ============
 const track = new Track(scene, THEME_NAME, TRACK_NAME);
 window.track = track; // DEBUG
+// DEBUG: tools/shot/shot.js 用只读探针钩子（同 ai.js __ai 先例，不影响任何逻辑）
+window.__mk = { scene, camera, renderer, track };
 
 // ============ 粒子系统 (P6: 收尾) ============
 const particleSystem = new ParticleSystem(scene);

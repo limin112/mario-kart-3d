@@ -514,6 +514,7 @@ export class AIManager {
   }
   
   update(dt) {
+    this.__gt = (this.__gt || 0) + dt; // DEBUG: 探针用游戏时间累加器
     for (const ai of this.aiKarts) {
       ai.update(dt);
     }

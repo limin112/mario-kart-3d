@@ -1,0 +1,39 @@
+你是 3D 马里奥赛车项目的 subagent，任务：为"广告牌文字镜像/undefined"修复写一个专项验证探针。
+
+开始前按顺序读：
+1. ~/workspace/mario-kart-3d/REQUIREMENTS.md
+2. ~/workspace/mario-kart-3d/STATE.md
+3. ~/workspace/mario-kart-3d/GUIDANCE.md（重点看 2026-10-12 18:55 条：用户反馈广告牌文字镜像+undefined）
+
+【文件白名单——铁律】
+你只能新建这一个文件：tools/verify/billboard-probe.mjs
+严禁修改/创建白名单外的任何文件，尤其 game/ 下所有文件、STATE.md、LOG.md、GUIDANCE.md、REQUIREMENTS.md、scripts/ 下已有文件、tools/verify/ 下已有文件。
+（主 agent 正在并行修改 game/track.js，你绝对不要碰 game/ 下任何东西，也不要在 8901 端口起服务——用 8903 端口自己起。）
+
+【背景契约（主 agent 本轮正在实现，你按此写探针，不要质疑契约）】
+- game/track.js 中护栏广告牌 mesh 会带 userData.isBillboard === true 标记；
+- main.js 的 window.__mk 调试钩子会包含 track（即 window.__mk.track，Track 实例，有 .spline（CatmullRomCurve3，getPointAt(t) 返回 Vector3）和 .cfg.roadWidth）；
+- 广告牌是 PlaneGeometry 小 mesh，材质 MeshBasicMaterial，纹理由 canvas fillText 绘制；
+- 修复后广告牌正面（局部 +Z，即纹理可读面）应朝向赛道中心线方向。
+
+【探针要求】tools/verify/billboard-probe.mjs，Node + playwright-core（参考同目录 select-probe.mjs / white-rect-probe.mjs 的写法与 chromium 启动参数，先读它们）。功能：
+
+A. 文字内容检查（页面加载前用 page.addInitScript 给 CanvasRenderingContext2D.prototype.fillText 打补丁，记录所有绘制字符串）：
+   - 收集所有 fillText 的 string 实参；
+   - 断言没有任何字符串等于/包含 "undefined" 或 "NaN"（注意：只查字符串实参，数字实参本来就该是数字）；
+   - 报告捕获到的全部唯一文字列表（应能看到 SPEED/RACE/TIME TRIAL/MARIO KART 3D 等广告牌文字，证明广告牌纹理真的画了）。
+
+B. 朝向检查（页面加载后约 12 秒，等场景建好，page.evaluate）：
+   - 遍历 window.__mk.scene，收集所有 userData.isBillboard === true 的 mesh；数量应 >= 1（若为 0 直接 fail，说明契约未生效）；
+   - 对每个广告牌：取世界位置 p、世界四元数，把局部 +Z 变换到世界得前向法线 n（只取 XZ 分量归一化）；
+   - 用 window.__mk.track.spline 采样（t 步长 0.002）找离 p 最近的样条点 c；横向向量 v = normalize(c - p)（XZ）；
+   - 断言 dot(n, v) > 0.3（正面朝向赛道内侧；镜像朝向时 dot≈-1）；
+   - 同时报告 min dot 和广告牌总数。
+
+C. 证据截图：把相机（window.__mk.camera）摆到赛道边某个广告牌前 8 米处、高 2 米、lookAt 广告牌中心，renderer.render(scene, camera) 后截图存 tools/verify/shots/billboard-p21-view.png；再截一张默认驾驶视角 tools/verify/shots/billboard-p21-drive.png。
+
+D. 全程收集 console error / page error，最后 JSON 输出 { ok, textIssues:[], billboardCount, minDot, consoleErrors, pageErrors } 并 process.exit(ok?0:1)。ok = 零 error 且 无文字问题 且 billboardCount>=1 且 minDot>0.3。
+
+【自测】主 agent 的 track.js 修复可能还没完成，你写完后自测一次即可（cd game && python3 -m http.server 8903 起服务，node billboard-probe.mjs 跑一次；如果因契约字段缺失 fail，确认你的代码路径没写错就行，在 HANDOFF 里注明"待主 agent 集成后复跑"）。测完 kill 掉你起的 8903 服务。
+
+【完成后】把结果写成 ~/workspace/mario-kart-3d/scripts/HANDOFF-billboard-probe.md：做了什么、文件路径、自测结果（贴 JSON 输出摘要）、遗留问题。最后用中文 2-3 行总结。

@@ -239,3 +239,25 @@
 - 2026-10-12 17:27 【taskmaster】本轮检查：Pi 主循环正在响应监工 17:06 用户反馈——已开两个 subagent：ai-upgrade（AI 对手加强，运行中，pid 8030，约 4h elapsed，.out 暂空进行中）+ projectiles（P15 projectiles.js 模块）。projectiles subagent 已秒断（.out 仅 "Stream ended without finish_reason"），game/projectiles.js 未产出——Qwen 流式通道今日第 4 次在 subagent 上断流。tools/verify/spectator-probe.mjs 已新建（观众 bug 定性用）。game/items.js 近 1 小时有修改（主 agent 侧推进中）。
   指导：① projectiles.js 允许再试一次 subagent（纯数据规则不适用，它是代码文件，主 agent 自写成本高；若第二次仍秒断则主 agent 按 scripts/subagent-prompt-projectiles.txt 契约亲手写，别再烧轮次）；② ai-upgrade 子任务收编后，下一轮优先排用户 17:06 第 1 项——P19 赛道复杂度（"现在就动手，不要等"，S 弯/发夹弯/上下坡/窄道超车点/捷径/外侧护栏/自适应路肩/弯前减速提示/加速带位置），这是用户看实机后的最高优先级；③ 观众 bug 用 spectator-probe.mjs 定性（15:12 条：绿/橙圆盘可能是掉落道具模型，先确认再决定修不修），验收按 17:06 条：观众全部在护栏外。本轮不另布置新任务（两项进行中）。
   Qwen 健康：18182 chat 200、finish_reason=length（max_tokens 60 截断）、content 非 null、reasoning_content 有值（thinking 模式，预期内）——健康。8901：200。verify.js：ok:true 零 console/page error、--drive 10 km/h，红线保持。
+
+- 2026-10-12 18:32 【taskmaster】本轮检查：Pi 主循环在推进用户 17:06 反馈（AI 加强 + 观众 bug）：game/ai.js 加了 window.__ai 探针钩子（DEBUG 行，redline 未破）、新建 tools/verify/ai-probe.mjs（60s 采样 AI 均速/横向出界/NaN，可跑基线）。items.js 17:27 有改动（P15 相关推进中）。
+  ① 【需主循环本轮处理】ai-upgrade subagent（pid 8030，约 13:27 启动）.out 已空 ~5 小时、无 HANDOFF，远超 subagent 协议 60 分钟上限——本轮先 tail 看一眼；若仍无输出/HANDOFF，按协议 kill 掉，AI 加强改由主 agent 在主循环里直接做（trackdefs.js 的"纯数据自写"先例同样适用：该文件开 subagent 已 4 连断，Qwen 流式通道对它的流断是老毛病，主循环亲手写最快）。ai-probe + window.__ai 钩子已就位，可先跑基线再开工。
+  ② projectiles.js：17:27 条"允许再试一次 subagent，第二次仍秒断则按 scripts/subagent-prompt-projectiles.txt 契约亲手写"——本轮迭代内执行/收尾，红线（verify.js ok:true）保持的前提下合并。
+  ③ AI + 观众两项落地后，立即启动 P19 赛道复杂度（用户 17:06 最高优先级，"现在就动手"：S 弯/发夹弯/上下坡/窄道超车点/捷径/外侧护栏/自适应路肩/弯前减速提示/加速带位置），验收=verify.js ok:true + 新赛道截图 + AI 跑完 3 圈不撞墙 + 观众全部在护栏外。
+  本轮检查：verify.js ok:true 零 console/page error、--drive 5 km/h（注意第一次我忘了传 url 参数拿到 ok:false 属调用错误非红线破，带全参数重跑 ok:true）；8901 200；已 push 75c896cc（ai.js 钩子 + ai-probe.mjs）→ main @ 4d53024f。
+  Qwen 健康：18182 chat 200、3.7s、content 非 null、reasoning_content 有值（thinking 模式，预期内）——健康。
+
+- 2026-10-12 18:55 【用户看实机截图，直接反馈"不行"】用户发了一张驾驶截图，问题：
+  1. 【广告牌文字镜像反了】所有路边广告牌的文字都是左右镜像的："SPEED"显示成反的，"TIME TRIAL"/"MARIO KART 3D"全反，部分还显示"undefined"。根因：广告牌平面朝向反了（看到的是背面）或纹理 UV 镜像了。修：翻转平面法线/旋转180度，或修正纹理映射；"undefined"说明文字纹理生成时变量没传进去，一起查。
+  2. 【赛道还是圆形】用户 17:06 就说了赛道太简单，到现在还是椭圆。P19 赛道复杂化必须提速：S 弯、发夹弯、上下坡，不要再拖。
+  3. 观众这次在看台上是对的（护栏后），保持。
+  验收：截图里广告牌文字全部正向可读，无"undefined"；新赛道有明显弯道变化。
+
+- 2026-10-12 18:59 【用户需求：加截图模块】用户说"你需要加截图模块，这样好开发"。做一个 Pi 自用的视觉验证截图模块：
+  1. 新建 tools/shot/shot.js：一行命令出多张关键截图——选单界面、发车视角、驾驶 5 秒后、俯视赛道全景。用法：`node tools/shot/shot.js --out shots/auto-<时间>/`。
+  2. 每张截图文件名带场景名和时间戳，顺手输出一张拼盘对比图（2x2）。
+  3. Pi 的开发流程改成：改完视觉相关代码 → 跑 shot.js → 自己看截图确认 → 再跑 verify.js。两次截图 diff 肉眼可见变化才算改完。
+  4. 截图存到 shots/auto/ 下，定期清理只留最近 10 组。
+  验收：shot.js 一次跑完 4 张截图无报错；Pi 下次改广告牌/赛道时用它自验证。
+
+- 2026-10-12 19:15 【babysit】两小时进展盘点：① projectiles subagent 重试成功，game/projectiles.js 已产出（Shell 类红/绿龟壳 + triggerLightningFlash，HANDOFF 契约零偏离），这一步走得对；② ai-upgrade subagent 和 billboard-probe subagent 相继 "Stream ended without finish_reason" 秒断——Qwen 流式通道今天在这类小任务上已经是第 5 次断了。别灰心，但也别再往这个通道里扔小任务：用户 18:55 的广告牌镜像修复、18:59 的 shot.js 截图模块，这两个都小（广告牌就是 track.js 里平面朝向/UV 纹理那一小块，shot.js 是独立 playwright 脚本 tools/shot/shot.js），主循环亲手写最快，写完老规矩 verify.js + 截图自验。③ projectiles.js 还没集成：items.js/main.js 接红壳追踪第一名/绿壳直线/闪电全体减速，集成了 P15 才算闭环。④ push 欠账（15:35 铁律）：game/projectiles.js、game/ai.js（__ai 钩子）、tools/verify/ai-probe.mjs 都还没 commit，本轮收尾一起推。verify.js 本轮 ok:true 零 error、--drive 10 km/h，红线稳的。

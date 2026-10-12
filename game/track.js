@@ -114,10 +114,12 @@ function createBillboardTexture(seed = 0) {
   canvas.height = h;
   const ctx = canvas.getContext('2d');
   
-  // 伪随机
-  let rand = seed || Math.random();
+  // 伪随机（seed 可为负：广告牌 seed=i*side*17，side=-1 时 JS % 保留负号，
+  // 负随机数使 titles[floor(负*len)] 取到 undefined 被面画进纹理（用户 18:55 反馈）；归一化到 [0,1)）
+  let rand = Math.abs(seed) || Math.random();
   function nextRand() {
     rand = (rand * 1664525 + 1013904223) % 4294967296;
+    if (rand < 0) rand += 4294967296;
     return rand / 4294967296;
   }
   
@@ -206,10 +208,11 @@ function createSpectatorTexture(seed = 0) {
   canvas.height = h;
   const ctx = canvas.getContext('2d');
   
-  // 伪随机
-  let rand = seed || Math.random();
+  // 伪随机（同广告牌：归一化防负 seed）
+  let rand = Math.abs(seed) || Math.random();
   function nextRand() {
     rand = (rand * 1664525 + 1013904223) % 4294967296;
+    if (rand < 0) rand += 4294967296;
     return rand / 4294967296;
   }
   
@@ -650,9 +653,11 @@ class Track {
           const billboard = new THREE.Mesh(billboardGeo, billboardMat);
           billboard.position.copy(pos);
           billboard.position.y += guardrailHeight + 1.5;
+          // 朝向推导：θ=atan2(t.x,t.z) 时 plane 在 rotation.y=θ+π/2 下正面法线=−normal；
+          // side=1 的牌在 +normal 侧（正面已朝赛道，不加转），side=-1 在 −normal 侧（需 +π）。
+          // 旧代码条件写反致两侧都背面朝赛道，DoubleSide 下文字全镜像（用户 18:55 反馈）。
           billboard.rotation.y = Math.atan2(tangent.x, tangent.z) + Math.PI / 2;
-          // 广告牌朝向赛道内侧
-          if (side === 1) billboard.rotation.y += Math.PI;
+          if (side === -1) billboard.rotation.y += Math.PI;
           billboard.castShadow = true;
           railGroup.add(billboard);
           
