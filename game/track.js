@@ -401,6 +401,7 @@ class Track {
     this.startLine = null;
     this.trees = [];
     this.boostZones = [];
+    this.slowMarks = [];
     this.checkpoints = [];
     this.trackLength = 0;
 
@@ -413,6 +414,7 @@ class Track {
     this._createShoulders();
     this._createGuardrails();
     this._createHairpinBarriers();
+    this._createHairpinSlowMarks();
     this._createStartLine();
     this._createTrees();
     this._createGrandstands();
@@ -684,6 +686,7 @@ class Track {
     // 两端各延伸 10%（合计 ≈ 弯道弧长 ×1.2），沿弯道外侧铺连续加高护墙（InstancedMesh）。
     const P = this.layout.controlPoints.map(([x, z]) => new THREE.Vector3(x, 0, z));
     const n = P.length;
+    this._hairpinRawSections = [];
     if (n < 6) return;
 
     // 1000 点样条采样，用于把世界坐标反查为 t
@@ -718,6 +721,7 @@ class Track {
       t0 = (t0 - ext + 1) % 1;
       sections.push({ t0, span: span + 2 * ext, side: cr > 0 ? -1 : 1, apex: i });
     }
+    this._hairpinRawSections = sections; // P19d：减速箭头复用同一批发夹段判定
     if (sections.length === 0) { this.hairpinSections = []; return; }
 
     // 2) 沿每段外侧铺连续护墙实例（1.2m 步长、箱体 1.5m 长重叠无缝）
@@ -782,6 +786,66 @@ class Track {
       t0: +s.t0.toFixed(3), t1: +((s.t0 + s.span) % 1).toFixed(3),
       arcM: +(s.span * this.trackLength).toFixed(1),
     }));
+  }
+
+  _createSlowMarkTexture() {
+    // P19d：程序化黄色减速箭头纹理（双 V 形 chevron 指向行进方向，透明底，无外部资源）
+    const c = document.createElement('canvas');
+    c.width = 512; c.height = 128;
+    const g = c.getContext('2d');
+    const chevron = (yc, half, h, lw, color) => {
+      g.strokeStyle = color; g.lineWidth = lw;
+      g.lineCap = 'round'; g.lineJoin = 'round';
+      g.beginPath();
+      g.moveTo(256 - half, yc + h / 2);
+      g.lineTo(256, yc - h / 2);
+      g.lineTo(256 + half, yc + h / 2);
+      g.stroke();
+    };
+    for (const yc of [40, 88]) { // 上下两个箭头，黑描边 + 黄主体
+      chevron(yc, 150, 30, 32, '#1a1a1a');
+      chevron(yc, 150, 30, 18, '#ffd400');
+    }
+    const tex = new THREE.CanvasTexture(c);
+    tex.colorSpace = THREE.SRGBColorSpace;
+    return tex;
+  }
+
+  _createHairpinSlowMarks() {
+    // P19d：发夹弯入口前 20m 路面上的黄色减速箭头。每个发夹段入口（t0，即 P19b
+    // 外侧护墙起点）前方 6/12/18m 各放一枚，宽度沿路面、指向行进方向；
+    // classic 无发夹段则零放置（零回归）。
+    const sections = this._hairpinRawSections || [];
+    this.slowMarks = [];
+    if (sections.length === 0) return;
+
+    const tex = this._createSlowMarkTexture();
+    this.slowMarkTexture = tex;
+    const mat = new THREE.MeshBasicMaterial({
+      map: tex, transparent: true, side: THREE.DoubleSide, depthWrite: false,
+      // 贴花：几何上已高于路面，polygonOffset 双保险（路面 -1、路肩 -2，取 -3）
+      polygonOffset: true, polygonOffsetFactor: -3, polygonOffsetUnits: -3,
+    });
+    const W = this.cfg.roadWidth * 1.1; // 箭头宽（roadWidth 为半宽，约占路面 55%）
+    const L = 2.4;
+    const geo = new THREE.PlaneGeometry(W, L);
+    geo.rotateX(-Math.PI / 2); // 铺平：法线 +Y，纹理"上"= 局部 -Z
+
+    for (const sec of sections) {
+      for (const d of [6, 12, 18]) { // 入口前 20m 内三枚
+        const t = ((sec.t0 - d / this.trackLength) % 1 + 1) % 1;
+        const pt = this.spline.getPointAt(t);
+        const tangent = this.spline.getTangentAt(t).normalize();
+        const mesh = new THREE.Mesh(geo, mat);
+        mesh.position.copy(pt);
+        mesh.position.y = pt.y + 0.07; // 路面 ~pt.y，加速带 0.05/边线 0.06 之上
+        // 纹理上方向（局部 -Z）对齐前进切线：Ry(ψ)·(0,0,-1)=(-sinψ,-cosψ)=(tx,tz)
+        mesh.rotation.y = Math.atan2(-tangent.x, -tangent.z);
+        mesh.userData = { isSlowMark: true };
+        this.scene.add(mesh);
+        this.slowMarks.push(mesh);
+      }
+    }
   }
 
   _createStartLine() {
@@ -1855,6 +1919,13 @@ class Track {
       cp.material.dispose();
       this.scene.remove(cp);
     }
+    // P19d：减速箭头（共享几何/材质，逐个 dispose 无害）
+    for (const sm of this.slowMarks) {
+      sm.geometry.dispose();
+      sm.material.dispose();
+      this.scene.remove(sm);
+    }
+    if (this.slowMarkTexture) this.slowMarkTexture.dispose();
     // 清理看台
     if (this.grandstands) {
       for (const gs of this.grandstands) {
