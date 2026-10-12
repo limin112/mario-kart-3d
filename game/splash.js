@@ -13,7 +13,8 @@
 //     550   副标题下方滑入淡入 400ms
 //     700   logo 高光扫过 600ms
 //     1400  底部「按任意键 / 点击开始」提示闪烁
-//     2300  自动退场：内容 scale→1.15 + 整体淡出 300ms → 清理 DOM/监听 → onDone()
+//     2100  自动退场：内容 scale→1.15 + 整体淡出 300ms → 清理 DOM/监听 → onDone()
+//     （P16 第二步：2300→2100，压缩 splash→比赛总时长到 ~6s）
 // - 跳过：t≥500ms 后 window keydown/click/touchstart 任一 → 250ms 退场 → 清理 → onDone()
 // - 纯 DOM+CSS，零 import、零外部资源、零音频、零 console 输出；不 preventDefault。
 // - 重复调用 startSplash 第二次直接忽略；退场后事件监听全部移除。
@@ -171,8 +172,8 @@ export function startSplash(onDone) {
         if (blink !== hintBlinkOn) { hintBlinkOn = blink; hint.style.opacity = blink ? '1' : '0.15'; }
         else hint.style.opacity = hintBlinkOn ? '1' : '0.15';
       }
-      // 2300 自动退场
-      if (t >= 2300) beginExit(false);
+      // 2100 自动退场（P16 第二步：2300→2100）
+      if (t >= 2100) beginExit(false);
     } else {
       // 退场中：等淡出完成 → 清理 → onDone（只一次）
       if (performance.now() - exitStartTime >= exitDuration + 30) {

@@ -1,0 +1,67 @@
+你是游戏开发 subagent，负责 P16 开屏动画的一个子任务：新建独立的 logo splash 模块。
+
+先按顺序读：
+1. ~/workspace/mario-kart-3d/REQUIREMENTS.md
+2. ~/workspace/mario-kart-3d/STATE.md
+3. ~/workspace/mario-kart-3d/GUIDANCE.md（重点看 2026-10-11 16:30 条 P16）
+
+【文件白名单——严格！】你只能：
+- 新建 game/splash.js
+- 新建 scripts/HANDOFF-splash.md
+- /tmp 下随便建临时测试文件
+严禁修改任何其它文件，尤其 main.js / audio.js / index.html / STATE.md / LOG.md /
+GUIDANCE.md / REQUIREMENTS.md / scripts/ 下已有文件。验证端口只用 8902/8903，
+不许碰 8901（主 agent 在用）。
+
+【任务】新建 game/splash.js —— 马里奥赛车式开屏 logo 大字动画，纯 DOM+CSS，零 import、
+零外部资源、零音频、零 console 输出。主 agent 会在 main.js 里这样调用（契约必须严格一致）：
+
+  import { startSplash } from './splash.js';
+  startSplash(onDone);   // onDone: () => void
+
+startSplash(onDone) 契约：
+- 调用即向 document.body 注入自己的 <style id="splash-style"> 和全屏遮罩
+  <div id="splashOverlay">（position:fixed; inset:0; z-index:9000; flex 居中；
+  背景深色径向渐变 alpha≈0.92，隐约透出后面的 3D 舞台）。
+- 大字 logo「SUPER PI KART」（红→橙渐变文字、白色描边、微倾斜，马力欧赛车味）+
+  副标题「★ 3D GRAND PRIX ★」。字体用系统字体栈即可。
+- 时间线（毫秒，用 rAF 或 setTimeout 都行，但必须基于时间戳、掉帧时不卡死）：
+  0     遮罩淡入 200ms
+  150   logo 砸入：scale 3.2→1，easeOutBack 回弹，450ms
+  550   副标题从下方滑入淡入 400ms
+  700   logo 上扫过一道高光（shine sweep，600ms）
+  1400  底部「按任意键 / 点击开始」提示开始闪烁
+  2300  自动退场：内容 scale 1→1.15 + 整体淡出 300ms，然后移除注入的 DOM 节点、
+        移除所有事件监听、调用 onDone()
+- 跳过：t≥500ms 后的 window keydown/click/touchstart 任一 → 立即进入退场（250ms）
+  → 同样清理并 onDone()。不要 preventDefault（别影响游戏键盘状态）。
+- onDone 在所有路径上必须且只能被调用一次（内部 guard）。重复调用 startSplash
+  第二次直接忽略。document 上事件监听退场后必须全部移除，不留残留。
+- 文件头写注释说明契约。代码风格参考 game/touch.js（也是自注入 DOM 的独立模块）。
+
+【自验（必须做，不许伪造）】
+1. 语法：cp game/splash.js /tmp/splash.mjs && node --check /tmp/splash.mjs
+2. 独立页面真机测试：
+   - cd ~/workspace/mario-kart-3d/game && python3 -m http.server 8902 &
+   - /tmp/splash-test/index.html 里 <script type="module">，
+     import { startSplash } from 'http://127.0.0.1:8902/splash.js'，
+     调用 startSplash(() => { window.__splashDone = true; })，背景放个纯色 div 模拟舞台。
+     用 python3 -m http.server 8903 服务 /tmp/splash-test。
+   - 写 /tmp/splash-test/test.mjs（playwright-core 在
+     ~/workspace/mario-kart-3d/tools/verify 下可 require，参考同目录 verify.js 的用法，
+     chromium.launch() 无参）：
+     a) 自动路径：加载页面，等 3.5s，断言 #splashOverlay 已从 DOM 移除、
+        window.__splashDone===true、零 console error / page error；
+        另在 t=1s 时截一张图存 /tmp/splash-test/logo.png（要能看到大字 logo）。
+     b) 跳过路径：重新加载，800ms 时 page.keyboard.press('Enter')，等 1s，
+        断言 __splashDone===true、overlay 已移除、零 error。
+   - headless 软渲染可能较慢，断言超时可放宽到 6s，但 __splashDone 必须为 true。
+3. 回归：cd ~/workspace/mario-kart-3d/tools/verify &&
+   node verify.js http://127.0.0.1:8902/ /tmp/s1.png
+   （此时游戏还没 import splash.js，只证明你新建文件没弄坏现有游戏，ok:true 即可）。
+4. 测完 kill 掉自己起的两个 http.server（按端口 lsof -ti:8902/8903 精确杀，
+   不许碰 8901），确认无残留进程。
+
+【交付】写 scripts/HANDOFF-splash.md：做了什么、契约实现细节（时间线、跳过、
+onDone 单次保证）、改了哪些文件（应只有 game/splash.js）、上述三步验证的真实结果
+（贴断言输出）、中文 2-3 行总结。诚实记录，失败就写失败。

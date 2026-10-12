@@ -54,7 +54,10 @@ showcaseScene.background = new THREE.Color(0x0a0a12); // 深色舞台背景
 
 // 相机
 const camera = new THREE.PerspectiveCamera(60, window.innerWidth / window.innerHeight, 0.1, 1000);
-camera.position.set(0, 5, 10);
+// P16 第二步：初始相机位 = 展示 intro 起手位（angle 0、radius 30、height 12），
+// splash 期间冻结渲染的就是这一帧，解冻进 intro 时零跳变。
+camera.position.set(0, 12, 30);
+camera.lookAt(0, 1.5, 0);
 
 // 灯光（P6 优化：更真实的日照、更大范围阴影、环境光增强）
 const hemiLight = new THREE.HemisphereLight(0xffeedd, 0x445566, 1.0); // 略带暖色的天光 + 冷色地反射
@@ -631,6 +634,9 @@ async function gameLoop(time) {
       if (introProgress >= 1) {
         state.showcasePhase = 'explode';
         state.showcasePhaseStartTime = gameTime;
+        // P16 第二步：引擎轰鸣与爆炸峰值对齐——"看到车散开的同时听到转速起来"
+        // （playRev ~1.1s 两段扫频，恰好盖住 1.2s 爆炸段；未 unlock 时安全 no-op）
+        audio.playRev();
       }
     } else if (state.showcasePhase === 'explode') {
       // 0.6-1.8s: 爆炸动画（组装态 -> 爆炸态），使用 easeOutCubic 平滑过渡
@@ -656,7 +662,8 @@ async function gameLoop(time) {
       state.showcaseCameraAngle += dt * 0.25;
       camera.position.x = Math.sin(state.showcaseCameraAngle) * camRadius;
       camera.position.z = Math.cos(state.showcaseCameraAngle) * camRadius;
-      camera.position.y = camHeight + Math.sin(showcaseElapsed * 0.5) * 0.5;
+      // 晃动幅度随爆炸进度起振（×easedExplode），intro 末→explode 初相机 y 连续不跳变
+      camera.position.y = camHeight + Math.sin(showcaseElapsed * 0.5) * 0.5 * easedExplode;
       camera.lookAt(0, 1.5, 0);
       
       if (explodeProgress >= 1) {
@@ -664,9 +671,9 @@ async function gameLoop(time) {
         state.showcasePhaseStartTime = gameTime;
       }
     } else if (state.showcasePhase === 'exit') {
-      // 1.8-2.0s: 退出过渡：0.2s 淡出
+      // P16 第二步：退出过渡 0.25s（原 0.3s，压缩总时长）
       const phaseElapsed = gameTime - state.showcasePhaseStartTime;
-      const exitProgress = THREE.MathUtils.clamp(phaseElapsed / 0.3, 0, 1);
+      const exitProgress = THREE.MathUtils.clamp(phaseElapsed / 0.25, 0, 1);
       const easedExit = easeInOutCubic(exitProgress);
       state.showcaseTransitionProgress = easedExit;
       
@@ -684,7 +691,8 @@ async function gameLoop(time) {
       state.showcaseCameraAngle += dt * 0.4;
       camera.position.x = Math.sin(state.showcaseCameraAngle) * camRadius;
       camera.position.z = Math.cos(state.showcaseCameraAngle) * camRadius;
-      camera.position.y = camHeight;
+      // 沿用 explode 末态的晃动项（同相位同幅），explode 末→exit 初相机 y 连续
+      camera.position.y = camHeight + Math.sin(showcaseElapsed * 0.5) * 0.5;
       camera.lookAt(0, 1.5, 0);
       
       if (exitProgress >= 1) {
@@ -892,16 +900,15 @@ window.addEventListener('resize', () => {
 });
 
 // ============ P16: 开屏 splash ============
-// 流程：logo 大字开屏（splash.js 自绘 DOM，约 2.6s，可任意键/点击跳过）
-// → 播完/跳过后解冻 P7 展示舞台（引擎轰一脚油门）→ 倒计时 → 比赛。
+// 流程：logo 大字开屏（splash.js 自绘 DOM，约 2.4s，可任意键/点击跳过）
+// → 播完/跳过后解冻 P7 展示舞台 → intro 末引擎轰油门（与爆炸对齐）→ 倒计时 → 比赛。
 function startShowcaseAfterSplash() {
   const now = performance.now() / 1000;
   state.showcaseStartTime = now;
   state.showcasePhaseStartTime = now;
   state.showcasePhase = 'intro';
   splashFinished = true;
-  // 引擎轰鸣（未 unlock 时安全 no-op；splash 跳过手势会先触发 unlock）
-  audio.playRev();
+  // P16 第二步：playRev 挪到 intro→explode 切换点（与爆炸视觉峰值对齐），此处不再轰
 }
 
 startSplash(startShowcaseAfterSplash);
