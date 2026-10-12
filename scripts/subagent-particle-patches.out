@@ -1,0 +1,22 @@
+任务完成。交付摘要：
+
+## 定性结论
+主 agent 的定位成立，细节精确化一处：
+- **根因确认**：`_updatePool()` 把活跃粒子矩阵写在原始槽位（`i*16`）却用 `mesh.count = activeCount` 截断，过期乱序（各池 lifetime ±30~50% 随机）产生空洞后，count 窗口混入未激活实例的残留矩阵。vendor three r160 的 InstancedMesh 确实以单位矩阵初始化（vendor/three.module.js:32662）。
+- **补充**：自然运行中"单位矩阵进 count 窗口"几乎不可达（发射器从前往后填空位、update 先于 render）；实际画出的圆斑主体是**过期实例的旧矩阵幽灵**（同根因同修法），颜色池残留色即监工看到的橙/黄。幽灵是瞬态的（空洞很快被复用），所以探针要密集轮询才抓得住。
+- **spawn 路径**：emit* 系列只置 active 标志、从不写矩阵槽位，无索引==槽位假设，无需适配。
+
+## 改动（严格白名单内）
+| 文件 | 说明 |
+|---|---|
+| `game/particles.js` | 仅 `_updatePool()`：矩阵/颜色紧凑写入 `w++` 槽位、`mesh.count = w`（净 ±10 行） |
+| `tools/verify/particle-patch-probe.mjs` | 新建探针（count≤active + 非单位矩阵 + 幽灵位置命中检测，三阶段密集轮询） |
+| `scripts/HANDOFF-particle-patches.md` | 交付报告 |
+
+## 验证结果
+- `node --check`：通过
+- **修复前**（原版 particles.js 挂临时端口 8907，不碰 8901）：`ok:false`，burst 阶段复现——pickupMushroom 幽灵×4、pickupBanana ×2、slip ×4
+- **修复后**（8901）：`ok:true`，三阶段全绿、零 error
+- **verify.js 回归**：`ok:true` 零 console/page error，--drive 速度 5 km/h > 0
+
+未动 STATE/LOG/GUIDANCE，未 push，8901 服务全程未中断（临时 8907 已清理）。

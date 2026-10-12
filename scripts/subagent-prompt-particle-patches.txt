@@ -1,0 +1,43 @@
+你是 3D 马里奥赛车项目的 subagent。任务名：particle-patches（绿/橙贴地圆斑修复）。
+
+先读 ~/workspace/mario-kart-3d/ 下的 REQUIREMENTS.md、STATE.md、GUIDANCE.md（重点 2026-10-12 13:15 babysit 条第①项）。
+
+## 任务：定性并修复赛道上的绿/橙贴地圆斑
+
+监工 13:12 实机截图发现赛道上有绿/橙两块贴地圆斑（idle 和 drive 视角都有），
+疑似粒子池未激活实例被画出来。主 agent 已初步定位，你验证并修复：
+
+根因在 game/particles.js 的 _updatePool()：它用 mesh.count = activeCount 截断渲染，
+但每个活跃粒子的矩阵仍写在它自己的原始索引槽位（offset = i * 16），并没有紧凑到前面。
+结果：当活跃粒子不在池前部时，count 覆盖到的是未激活实例的残留矩阵
+（初始为单位矩阵 → 在 mesh 原点画一个贴地小面片 = 圆斑；颜色池同理显示成绿/橙）。
+
+修复要求（最小改动，只改 game/particles.js）：
+- 在 _updatePool 里把活跃实例的矩阵/颜色**紧凑写入**前部槽位（w++ 递增写），
+  mesh.count = w。注意双色池（isColorPool）的 instanceColor 也要跟着紧凑写同一 w。
+- 检查 spawn 路径（_spawnBurst 等）是否有"实例索引 == 矩阵槽位"的隐含假设，一并适配。
+- 不要改粒子外观、数量、API（ParticleSystem 对外方法名/签名不许变），main.js/items.js 零改动。
+
+## 文件白名单（严格，越界即报废）
+你只能：
+1. 修改 game/particles.js；
+2. 新建 tools/verify/particle-patch-probe.mjs（专项探针，见下）；
+3. 新建 scripts/HANDOFF-particle-patches.md。
+严禁碰其他任何文件，尤其 STATE.md / LOG.md / GUIDANCE.md / REQUIREMENTS.md / scripts/ 下其他文件 / game/ 下其他文件。
+主 agent 同时在改 main.js/splash.js 和跑别的探针，8901 端口服务别 kill——先 curl 探活，
+不通才用 cd game && python3 -m http.server 8901 & 起（幂等，不循环 kill）。
+
+## 验证（必须做，写进 HANDOFF）
+1. node --check：把 game/particles.js 拷成 /tmp/p.mjs 跑 node --check。
+2. 新建 tools/verify/particle-patch-probe.mjs（playwright-core，抄 splash-probe.mjs 的骨架）：
+   加载页面，等 ~13s 进比赛态，page.evaluate 遍历 window.__mk.particleSystem.pools，
+   对每个池检查：mesh.count <= 活跃实例数，且 count 个前部槽位矩阵都不是单位矩阵
+   （单位矩阵=未激活残留，平移分量全 0 且 scale=1）；再按住 ArrowUp 3s 触发轮胎烟雾后复查。
+   输出 JSON 含 ok 字段。修复前该探针应能复现问题（先跑一次记录"修复前"结果），修复后 ok:true。
+3. 完整回归：cd tools/verify && node verify.js http://127.0.0.1:8901/ /tmp/pp1.png --drive /tmp/pp2.png
+   必须 ok:true 零 console/page error、--drive 速度 > 0。
+
+## 交付
+scripts/HANDOFF-particle-patches.md 内容：做了什么、改了哪几个文件、
+修复前/后探针输出摘要、verify.js 结果、中文 2-3 行总结。
+不要更新 STATE.md / LOG.md（主 agent 负责）。不要 git push。

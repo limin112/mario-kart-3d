@@ -406,7 +406,10 @@ class ParticleSystem {
   _updatePool(pool, dt, camera) {
     const { mesh, instances, config, dummy, isColorPool } = pool;
     const matrixArray = mesh.instanceMatrix.array;
-    let activeCount = 0;
+    // w = 已紧凑写入的前部槽位数。活跃实例的矩阵/颜色必须紧凑写到 [0, w)，
+    // 再设 mesh.count = w；若写回实例自己的原始槽位，count 窗口内会混入未激活
+    // 实例的残留矩阵（初始单位矩阵/过期旧矩阵），在赛道上画出贴地圆斑。
+    let w = 0;
     
     // 颜色数组（用于双色池）
     const colorArray = isColorPool ? mesh.instanceColor.array : null;
@@ -422,8 +425,6 @@ class ParticleSystem {
         inst.active = false;
         continue;
       }
-      
-      activeCount++;
       
       inst.velocity.y += config.gravity * dt;
       inst.position.addScaledVector(inst.velocity, dt);
@@ -441,23 +442,24 @@ class ParticleSystem {
       dummy.scale.setScalar(size);
       dummy.updateMatrix();
       
-      const offset = i * 16;
+      const offset = w * 16;
       for (let j = 0; j < 16; j++) {
         matrixArray[offset + j] = dummy.matrix.elements[j];
       }
       
-      // 更新实例颜色（双色池）
+      // 更新实例颜色（双色池，与矩阵写入同一紧凑槽位 w）
       if (isColorPool && colorArray) {
         const color = new THREE.Color().lerpColors(colorStart, colorEnd, t);
-        colorArray[i * 3] = color.r;
-        colorArray[i * 3 + 1] = color.g;
-        colorArray[i * 3 + 2] = color.b;
+        colorArray[w * 3] = color.r;
+        colorArray[w * 3 + 1] = color.g;
+        colorArray[w * 3 + 2] = color.b;
       }
+      w++;
     }
     
     mesh.instanceMatrix.needsUpdate = true;
     if (isColorPool) mesh.instanceColor.needsUpdate = true;
-    mesh.count = activeCount;
+    mesh.count = w;
   }
 
   dispose() {
