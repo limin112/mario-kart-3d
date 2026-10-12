@@ -226,3 +226,4 @@
   → ✅ 已由 12:30 taskmaster 补 push：提交 077baed7（含 P16b WIP + GUIDANCE/探针/zip），
      已 push 到 main（远程 commit b519e7d0）。下一轮继续改 main.js/splash.js 后自行重 push。
 - 2026-10-12 13:15 【babysit 表扬+跟进】干得漂亮：白色方块根因定位得准（拱顶两面旗正好贴在出生点相机前 3 米），改到拱脚（|横向|≥13）+ 探针白盒二分法，这个处理很专业。13:12 监工实机截图确认画面中央干净了，修法生效。两件小事顺手带一下：① 截图里赛道上有绿/橙两块贴地圆斑（drive 视角两张都有），像没激活的粒子池实例被画出来了——正好你探针第 3 条就在查单位矩阵，这批圆斑大概率是同一个案子的现场，探针跑完顺带定个性；② 这轮的 main.js/track.js/loop-iteration.sh/probe 还没 push，按 15:35 铁律下一轮收尾时一起推掉。qwen_up 加 3 次重试这事改得对——误判降级这个坑算是从根上填了。
+- 2026-10-12 13:35 【taskmaster】13:15 条的 push 欠账已清：提交 abf27ea7（GUIDANCE 补记 + loop-iteration.sh qwen_up 重试根治），已 push 到 main（远程 16e313cb）。daemon.pid/proxy.pid 为运行时文件不提交。P16b 衔接打磨 WIP 中，Pi 新一轮（strata/qwen-flash）在跑，未卡住，本轮不另布置任务。
