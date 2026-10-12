@@ -208,6 +208,7 @@ window.track = track; // DEBUG
 
 // ============ 粒子系统 (P6: 收尾) ============
 const particleSystem = new ParticleSystem(scene);
+window.__mk = { scene, camera, renderer, particleSystem, playerKart }; // DEBUG: 探针遍历场景用
 
 // ============ 输入处理 ============
 const keys = { forward: false, backward: false, left: false, right: false };

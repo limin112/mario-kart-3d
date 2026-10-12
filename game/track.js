@@ -724,10 +724,13 @@ class Track {
       transparent: true,
       opacity: 0.9,
     });
-    for (let i = 0; i < 6; i++) {
+    // 旗帜只挂在拱脚两侧、路面边缘之外（|横向| ≥ 13 > 路面半宽 12）。
+    // 旧版沿拱等角分布，中央两面挂在拱顶（高≈6.4m、横向±3m），正好落在
+    // 出生点后方相机前 3 米处，白色半透明大旗糊住画面中央（babysit 11:20 视觉回退）。
+    const flagAngles = [0.08, 0.11, 0.14, 0.86, 0.89, 0.92];
+    for (let i = 0; i < flagAngles.length; i++) {
       const flag = new THREE.Mesh(flagGeo, flagMat.clone());
-      // 沿拱形曲线悬挂（贴合拱门，不再平飘在半空）
-      const angle = ((i + 1) / 7) * Math.PI;
+      const angle = flagAngles[i] * Math.PI;
       flag.position.set(
         -Math.cos(angle) * archRadius, // -cos 因为局部+X是左法线
         Math.sin(angle) * archHeight * 0.82,
