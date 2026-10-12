@@ -280,3 +280,12 @@
   babysit 21:20 布置的两项 Pi 一直没落实，本轮 taskmaster 已亲手代落实进 scripts/loop-iteration.sh（bash -n 通过；新 qwen_up 探针实测 UP 3s）：① qwen_up 升级为 chat 真探针（max_tokens=4 非流式 chat，超时 20s，连续两次失败才算 down，再降级 OpenRouter）；② 熔断：`Connection error` 连续 10 轮 → 休眠 30 分钟（scripts/circuit-breaker.state 计数）。下一轮 daemon 自动生效。
   另：8901 的 http.server 僵死（监听但连接被拒，pid 10120 跑了 8.5 小时），已 kill + start_server.sh 重拉，200；verify.js ok:true、--drive 10 km/h，红线稳。
   任务队列不变（Qwen 恢复前不开新 P）：P15 已闭环（STATE 17:10，items.js 414 行集成 + audio.js 音效已 push）；恢复后按 20:35 顺序：① shot.js 竞态修复（20:35 修法：02/03/04 用 ?track=classic 调试入口另起一页，轮询 200ms）② 广告牌视觉验收（必须肉眼看图确认文字正向无 undefined）③ P19 赛道复杂化（用户两次点名"赛道还是圆形"）。
+
+- 2026-10-12 23:25 【babysit：VM 重启导致 daemon 掉线，看门狗会自动恢复】23:14 左右运行时服务重启（/etc 被清空，mario-kart-loop.service unit 消失、daemon 进程没了、8901 http.server 也挂了）。别慌，这不是你的错，也不是代码问题：
+  1. 8901 我已用 start_server.sh 重拉（200 正常），verify.js 本轮重跑 ok:true、零 console/page error、--drive 10 km/h，红线稳。
+  2. loop daemon 由 mario-kart-loop-watchdog（15 分钟一轮）负责恢复：它会从 ~/workspace/mario-kart-3d/scripts/mario-kart-loop.service 正本重装 unit + daemon-reload + enable/start（上次 12:33 也是这么恢复的）。daemon 下一轮会自动从 loop-iteration.sh 第 45-46 行自检重拉 or-proxy（我确认过 18080 现在是 000，但脚本里有自动拉起逻辑，不用手动管）。
+  3. daemon 恢复后按 22:27 队列继续，不用重新想顺序：① shot.js 竞态修复（20:35 修法：02/03/04 用 ?track=classic 调试入口另起一页、轮询 200ms）② 广告牌视觉验收（必须看图确认文字正向无 undefined）③ P19 赛道复杂化。
+  4. Qwen 大 prompt 的 `Connection error.` 今天 21:53 起还在断（last-run-output 仍是这一句）。22:27 的熔断+qwen_up 真探针已进 loop-iteration.sh，恢复后下一轮自动生效。worker3 是用户自己的机器，通道问题只如实报原文，不许动他的部署。
+  本轮未布置新 P（P15 已闭环；队列等 daemon 恢复后自动推进）。
+
+- 2026-10-12 23:30 【babysit】23:25 条修正：看门狗 23:26 轮迟迟没触发（VM 时钟跳变），不等了，按 AGENTS.md 换机恢复路径已亲手执行——sudo cp 正本 unit → daemon-reload → systemctl set-environment 注入代理环境（含 no_proxy/NO_PROXY，取本机 env，绝不写文件）→ enable --now。服务 active，daemon 进程在，loop-runs.log 新行 `[loop] 15:24:11 qwen up, running round with strata/qwen-flash`——新一轮已用 Qwen 开跑。恢复后队列不变（shot.js 竞态修复→广告牌视觉验收→P19）。

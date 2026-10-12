@@ -74,10 +74,14 @@ function pruneOld(outRoot, keep = 10) {
     const t0 = Date.now();
     while (Date.now() - t0 < timeoutMs) {
       if (await page.evaluate(fn).catch(() => false)) { report.steps.push(`${what} after ${((Date.now() - t0) / 1000).toFixed(1)}s`); return true; }
-      await page.waitForTimeout(500);
+      await page.waitForTimeout(200);
     }
     throw new Error(`timeout waiting for ${what}`);
   };
+
+  // 拼接 debug URL（调试入口：无选单直接进比赛）
+  const debugUrl = new URL(args.url);
+  debugUrl.searchParams.set('track', 'classic');
 
   try {
     // ---- 01 选单界面（默认无参数页）----
@@ -95,27 +99,40 @@ function pruneOld(outRoot, keep = 10) {
       return !el || !el.offsetParent;
     }, 20000, 'select dismissed');
 
-    // ---- 等倒计时出现（splash→展示→倒计时），再等它消失（GO 结束 = 发车）----
+    // ---- 02/03/04：另起一页用调试 URL（无选单，直接 splash→展示→倒计时）----
+    const page2 = await browser.newPage({ viewport: { width: 1280, height: 800 } });
+    page2.on('console', (m) => { if (m.type() === 'error') report.consoleErrors.push(m.text().slice(0, 300)); });
+    page2.on('pageerror', (e) => report.pageErrors.push(String(e).slice(0, 300)));
+
+    await page2.goto(debugUrl.toString(), { waitUntil: 'load', timeout: 60000 });
+
+    // 等倒计时出现（splash 2.4s + 展示 2s + 倒计时 1.6s ≈ 6s，headless 只显示约 1 帧）
     await waitFor(() => {
       const el = document.getElementById('countdown');
       return !!el && el.style.display === 'block';
-    }, 180000, 'countdown visible');
+    }, 30000, 'countdown visible (debug)');
+
+    // 等倒计时消失（GO 结束 = 发车）
     await waitFor(() => {
       const el = document.getElementById('countdown');
       return !!el && el.style.display === 'none';
-    }, 180000, 'countdown finished (GO)');
+    }, 30000, 'countdown finished (GO) debug');
 
     // ---- 02 发车视角 ----
     await shot('02-start');
 
-    // ---- 03 驾驶 5 秒后 ----
-    await page.keyboard.down('ArrowUp');
-    await page.waitForTimeout(5000);
-    await page.keyboard.up('ArrowUp');
+    // ---- 03 驾驶 5 秒后（先确认比赛已开始：HUD 时间在走）----
+    await waitFor(() => {
+      const el = document.getElementById('time');
+      return !!el && parseFloat(el.textContent) > 0.5;
+    }, 10000, 'race started (HUD time moving)');
+    await page2.keyboard.down('ArrowUp');
+    await page2.waitForTimeout(5000);
+    await page2.keyboard.up('ArrowUp');
     await shot('03-drive5s');
 
     // ---- 04 俯视赛道全景（后注册 rAF 压过游戏跟随相机，截图后停掉即恢复）----
-    await page.evaluate(() => {
+    await page2.evaluate(() => {
       const { scene, camera, renderer, track } = window.__mk;
       let minx = 1e9, maxx = -1e9, minz = 1e9, maxz = -1e9;
       for (let i = 0; i < 96; i++) {
@@ -128,7 +145,7 @@ function pruneOld(outRoot, keep = 10) {
       const h = (span / 2) / Math.tan((camera.fov * Math.PI) / 360) * 1.1;
       window.__ovStop = false;
       const loop = () => {
-        if (window.__ovStop) return; // 游戏下一帧会自行把相机拿回去
+        if (window.__ovStop) return;
         camera.up.set(0, 0, -1);
         camera.position.set(cx, h, cz);
         camera.lookAt(cx, 0, cz);
@@ -137,9 +154,12 @@ function pruneOld(outRoot, keep = 10) {
       };
       loop();
     });
-    await page.waitForTimeout(3000); // 软渲染慢，多给几帧
+    await page2.waitForTimeout(3000);
     await shot('04-overhead');
-    await page.evaluate(() => { window.__ovStop = true; });
+    await page2.evaluate(() => { window.__ovStop = true; });
+
+    await page2.close();
+    await page.close();
 
     // ---- 00 2x2 拼盘（页内 canvas 合成，零外部依赖）----
     const names = ['01-select', '02-start', '03-drive5s', '04-overhead'];
