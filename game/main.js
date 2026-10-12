@@ -389,6 +389,15 @@ function updatePhysics(dt) {
     // 在路肩上：中等减速
     p.velocity.multiplyScalar(0.92);
   }
+
+  // P19b：发夹弯外侧护墙硬碰撞——位置拉回墙内，向外速度分量归零（轻微回弹）
+  const wallHit = track.getHairpinWallHit(p.position);
+  if (wallHit) {
+    const outDir = wallHit.normal.clone().multiplyScalar(wallHit.side); // 朝弯道外侧的单位向量
+    p.position.addScaledVector(outDir, -wallHit.excess);
+    const outwardSpeed = p.velocity.dot(outDir);
+    if (outwardSpeed > 0) p.velocity.addScaledVector(outDir, -outwardSpeed * 1.2);
+  }
   
   // 加速带检测
   const boostMult = track.getBoostMultiplier(p.position);

@@ -1570,6 +1570,31 @@ class Track {
   }
 
   /**
+   * P19b：发夹弯外侧护墙硬碰撞查询。
+   * 护墙（_createHairpinBarriers）是纯视觉 InstancedMesh，物理引擎只有软拉回，
+   * 低速/软渲染帧大时一帧位移可穿过护墙。此方法供物理层做硬约束。
+   * @param {THREE.Vector3} position
+   * @returns {Object|null} 命中返回 { point, normal, side, wallOffset, excess }，否则 null
+   */
+  getHairpinWallHit(position) {
+    if (!this.hairpinSections || this.hairpinSections.length === 0) return null;
+    const { t, point, tangent } = this.getClosestPoint(position);
+    const wallOffset = this.cfg.roadWidth + this.cfg.shoulderWidth + this.cfg.guardrailOffset + 0.45;
+    for (const s of this.hairpinSections) {
+      const span = (s.t1 - s.t0 + 1) % 1;
+      const u = (t - s.t0 + 1) % 1;
+      if (span === 0 || u > span) continue;
+      const normal = new THREE.Vector3(-tangent.z, 0, tangent.x); // 左法线
+      const lateral = position.clone().sub(point).dot(normal); // +=偏左
+      const outward = lateral * s.side; // 弯道外侧方向的横向距离
+      if (outward > wallOffset) {
+        return { point, normal, side: s.side, wallOffset, excess: outward - wallOffset };
+      }
+    }
+    return null;
+  }
+
+  /**
    * 判断是否在赛道上（路面+路肩范围内）
    * @param {THREE.Vector3} position
    * @returns {boolean}
