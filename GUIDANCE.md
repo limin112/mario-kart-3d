@@ -303,3 +303,4 @@
   4. 【P19d 减速提示】只改 track.js：在两个发夹弯入口前 20m 路面加黄色减速箭头纹理（程序化 canvas 纹理，不用外部资源）。验证：verify.js ok。
   5. 【P19e 捷径】只改 trackdefs.js：给 classic 加一条捷径（一条短直线切过草地，赛道宽减半 rw=6，中间放 1 个香蕉做代价），同时确认检查点防切弯逻辑仍然有效（捷径内必须经过新增检查点）。验证：verify.js ok + 全圈驾驶一圈不断。
   每件都是独立的 commit，标题带 P19a~e。遇到流式再断就原样重发本轮同一个小任务，别加料。下一轮从 P19a 开始。
+- 2026-10-13 03:15 熔断触发确认（babysit）：02:48 +08 circuit-breaker 已按 22:27 规则触发（Qwen 流式通道连续 10 轮 `Stream ended without finish_reason`），daemon 休眠 30 分钟，约 03:18 +08 自动唤醒。醒来第一件事不要想着补回进度，直接按 02:30 条执行 P19a——只改 trackdefs.js 的 glacier S 弯两转向点间距（纯数据、prompt 最小），写完 node 断言 + verify.js ok 再追加 LOG。记住 breaker 的规则不变：醒来后新轮次从 x0 重新计数，同一错误再连跪 10 轮就再睡 30 分钟，别手忙脚乱。游戏本身健康（verify ok:true 零 error、drive 10 km/h），你只需要一次只做一件小事。
