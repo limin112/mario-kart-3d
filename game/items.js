@@ -1,7 +1,8 @@
 import * as THREE from 'three';
+import { Shell, triggerLightningFlash } from './projectiles.js';
 
 /**
- * 道具系统模块：?道具箱、蘑菇加速、香蕉皮
+ * 道具系统模块：?道具箱、蘑菇加速、香蕉皮、红龟壳、绿龟壳、闪电
  */
 
 // 道具配置
@@ -11,11 +12,17 @@ const ITEM_CONFIG = {
   boxHeight: 2.5,           // 箱子高度（底部离地高度）
   respawnTime: 8,           // 重生时间（秒）
   items: {
-    mushroom: { probability: 0.6, duration: 3.0, boostMultiplier: 1.8 }, // 蘑菇
-    banana: { probability: 0.4, slipDuration: 1.5 },                     // 香蕉
+    mushroom: { probability: 0.4, duration: 3.0, boostMultiplier: 1.8 }, // 蘑菇
+    banana: { probability: 0.25, slipDuration: 1.5 },                     // 香蕉
+    red_shell: { probability: 0.15, speed: 55, lifetime: 8 },             // 红龟壳
+    green_shell: { probability: 0.1, speed: 60, lifetime: 6 },            // 绿龟壳
+    lightning: { probability: 0.1, shrinkDuration: 4.0 },                 // 闪电
   },
   bananaLifetime: 30,       // 香蕉皮存活时间（秒）
   bananaSlipForce: 0.3,     // 打滑时的速度保留系数
+  shellCollisionRadius: 1.6,
+  shellHitStunDuration: 1.5,
+  shellHitSpeedMult: 0.4,
 };
 
 /**
@@ -25,6 +32,9 @@ const ItemType = {
   NONE: 'none',
   MUSHROOM: 'mushroom',
   BANANA: 'banana',
+  RED_SHELL: 'red_shell',
+  GREEN_SHELL: 'green_shell',
+  LIGHTNING: 'lightning',
 };
 
 /**
@@ -182,11 +192,15 @@ class ItemBox {
       this.collectedBy = kart;
 
       const rand = Math.random();
-      if (rand < ITEM_CONFIG.items.mushroom.probability) {
-        return ItemType.MUSHROOM;
-      } else {
-        return ItemType.BANANA;
+      const items = ITEM_CONFIG.items;
+      let cumulative = 0;
+      for (const [key, config] of Object.entries(items)) {
+        cumulative += config.probability;
+        if (rand < cumulative) {
+          return ItemType[key.toUpperCase()];
+        }
       }
+      return ItemType.MUSHROOM; // fallback
     }
     return null;
   }
@@ -599,6 +613,24 @@ export class PlayerItemManager {
         this.isSlipping = false;
       }
     }
+
+    // 更新龟壳
+    if (this.shells) {
+      const leader = this._findLeader();
+      const shellsToRemove = [];
+      for (let i = 0; i < this.shells.length; i++) {
+        const shell = this.shells[i];
+        shell.update(dt, shell.type === 'red' ? leader : null);
+        if (!shell.active) {
+          shellsToRemove.push(i);
+        }
+      }
+      for (let i = shellsToRemove.length - 1; i >= 0; i--) {
+        const idx = shellsToRemove[i];
+        this.shells[idx].dispose();
+        this.shells.splice(idx, 1);
+      }
+    }
   }
 
   _pickupItem(itemType) {
@@ -620,11 +652,17 @@ export class PlayerItemManager {
         [ItemType.NONE]: '无',
         [ItemType.MUSHROOM]: '蘑菇',
         [ItemType.BANANA]: '香蕉',
+        [ItemType.RED_SHELL]: '红龟壳',
+        [ItemType.GREEN_SHELL]: '绿龟壳',
+        [ItemType.LIGHTNING]: '闪电',
       };
       const icons = {
         [ItemType.NONE]: 'item-none',
         [ItemType.MUSHROOM]: 'item-mushroom',
         [ItemType.BANANA]: 'item-banana',
+        [ItemType.RED_SHELL]: 'item-red-shell',
+        [ItemType.GREEN_SHELL]: 'item-green-shell',
+        [ItemType.LIGHTNING]: 'item-lightning',
       };
       el.textContent = names[this.currentItem] || '无';
       el.className = 'item-icon ' + (icons[this.currentItem] || 'item-none');
@@ -636,6 +674,12 @@ export class PlayerItemManager {
       this._useMushroom();
     } else if (this.currentItem === ItemType.BANANA) {
       this._useBanana();
+    } else if (this.currentItem === ItemType.RED_SHELL) {
+      this._useRedShell();
+    } else if (this.currentItem === ItemType.GREEN_SHELL) {
+      this._useGreenShell();
+    } else if (this.currentItem === ItemType.LIGHTNING) {
+      this._useLightning();
     }
     this.currentItem = ItemType.NONE;
     this._updateItemHUD();
@@ -678,6 +722,98 @@ export class PlayerItemManager {
     if (this.audio && this.audio.playBanana) {
       this.audio.playBanana();
     }
+  }
+
+  _useRedShell() {
+    // 红龟壳：追踪第一名
+    const target = this._findLeader();
+    const forward = new THREE.Vector3(
+      -Math.sin(this.kartPhysics.rotation),
+      0,
+      -Math.cos(this.kartPhysics.rotation)
+    );
+    const pos = this.kartPhysics.position.clone().addScaledVector(forward, 2.5);
+    pos.y = 0.5;
+
+    const shell = new Shell(this.scene, {
+      type: 'red',
+      position: pos,
+      rotation: this.kartPhysics.rotation,
+      speed: ITEM_CONFIG.items.red_shell.speed,
+      lifetime: ITEM_CONFIG.items.red_shell.lifetime,
+    });
+    shell.target = target;
+    this.shells = this.shells || [];
+    this.shells.push(shell);
+
+    if (this.audio && this.audio.playShell) {
+      this.audio.playShell();
+    }
+  }
+
+  _useGreenShell() {
+    // 绿龟壳：直线飞行
+    const forward = new THREE.Vector3(
+      -Math.sin(this.kartPhysics.rotation),
+      0,
+      -Math.cos(this.kartPhysics.rotation)
+    );
+    const pos = this.kartPhysics.position.clone().addScaledVector(forward, 2.5);
+    pos.y = 0.5;
+
+    const shell = new Shell(this.scene, {
+      type: 'green',
+      position: pos,
+      rotation: this.kartPhysics.rotation,
+      speed: ITEM_CONFIG.items.green_shell.speed,
+      lifetime: ITEM_CONFIG.items.green_shell.lifetime,
+    });
+    this.shells = this.shells || [];
+    this.shells.push(shell);
+
+    if (this.audio && this.audio.playShell) {
+      this.audio.playShell();
+    }
+  }
+
+  _useLightning() {
+    // 闪电：全体减速（除了自己）
+    if (this.aiItemManager) {
+      this.aiItemManager.triggerLightning(this.kartPhysics);
+    }
+    // 视觉特效
+    triggerLightningFlash(0.8);
+
+    if (this.audio && this.audio.playLightning) {
+      this.audio.playLightning();
+    }
+  }
+
+  _findLeader() {
+    // 找到排名第一的卡丁车（玩家或 AI）
+    let leader = null;
+    let bestProgress = -1;
+    
+    // 检查玩家
+    const playerProgress = this.kartPhysics.lap * 10000 + (this.kartPhysics.lastCheckpointIndex + 1);
+    if (playerProgress > bestProgress) {
+      bestProgress = playerProgress;
+      leader = this.kartPhysics;
+    }
+    
+    // 检查 AI
+    if (this.aiItemManager && this.aiItemManager.aiKarts) {
+      for (const ai of this.aiItemManager.aiKarts) {
+        if (ai.finished) continue;
+        const aiProgress = ai.lap * 10000 + (ai.lastCheckpointIndex + 1);
+        if (aiProgress > bestProgress) {
+          bestProgress = aiProgress;
+          leader = ai;
+        }
+      }
+    }
+    
+    return leader;
   }
 
   _triggerSlip() {
@@ -732,6 +868,13 @@ export class PlayerItemManager {
     }
     this.mushrooms = [];
 
+    if (this.shells) {
+      for (const shell of this.shells) {
+        shell.dispose();
+      }
+      this.shells = [];
+    }
+
     for (const box of this.itemBoxes) {
       box.active = true;
       box.mesh.visible = true;
@@ -757,7 +900,7 @@ export class PlayerItemManager {
 }
 
 /**
- * AI 道具管理器 (简化：只会用蘑菇加速)
+ * AI 道具管理器 (简化：只会用蘑菇加速，红龟壳追踪、绿龟壳直线、闪电)
  */
 export class AIItemManager {
   constructor(scene, track, aiKarts, audio, particleSystem = null) {
@@ -768,6 +911,9 @@ export class AIItemManager {
     this.particleSystem = particleSystem;
     this.itemBoxes = [];
     this.bananas = [];
+    this.shells = [];
+    this.lightningActive = false;
+    this.lightningTimer = 0;
     this.aiItemState = new Map();
 
     for (const ai of this.aiKarts) {
@@ -776,6 +922,8 @@ export class AIItemManager {
         slipTimer: 0,
         isSlipping: false,
         baseMaxSpeed: ai.maxSpeed,
+        lightningTimer: 0,
+        lightningShrunk: false,
       });
     }
   }
@@ -785,10 +933,59 @@ export class AIItemManager {
   }
 
   update(dt) {
+    // 更新龟壳
+    if (this.shells) {
+      const leader = this._findLeader();
+      const shellsToRemove = [];
+      for (let i = 0; i < this.shells.length; i++) {
+        const shell = this.shells[i];
+        shell.update(dt, shell.type === 'red' ? leader : null);
+        if (!shell.active) {
+          shellsToRemove.push(i);
+        }
+      }
+      for (let i = shellsToRemove.length - 1; i >= 0; i--) {
+        const idx = shellsToRemove[i];
+        this.shells[idx].dispose();
+        this.shells.splice(idx, 1);
+      }
+    }
+
+    // 更新闪电效果
+    if (this.lightningActive) {
+      this.lightningTimer -= dt;
+      if (this.lightningTimer <= 0) {
+        this.lightningActive = false;
+        // 恢复所有 AI 的大小和速度
+        for (const ai of this.aiKarts) {
+          if (ai.finished) continue;
+          const state = this.aiItemState.get(ai);
+          if (state && state.lightningShrunk) {
+            ai.scale.set(1, 1, 1);
+            ai.maxSpeed = state.baseMaxSpeed;
+            state.lightningShrunk = false;
+          }
+        }
+      }
+    }
+
     for (const ai of this.aiKarts) {
       if (ai.finished) continue;
       const state = this.aiItemState.get(ai);
       if (!state) continue;
+
+      // AI 闪电缩小效果
+      if (state.lightningTimer > 0) {
+        state.lightningTimer -= dt;
+        if (state.lightningTimer <= 0) {
+          state.lightningTimer = 0;
+          if (state.lightningShrunk) {
+            ai.scale.set(1, 1, 1);
+            ai.maxSpeed = state.baseMaxSpeed;
+            state.lightningShrunk = false;
+          }
+        }
+      }
 
       // AI 拾取道具箱
       for (const box of this.itemBoxes) {
@@ -796,6 +993,15 @@ export class AIItemManager {
           const item = box.tryCollect(ai.position, ai);
           if (item === ItemType.MUSHROOM) {
             this._aiUseMushroom(ai, state);
+            break;
+          } else if (item === ItemType.RED_SHELL) {
+            this._aiUseRedShell(ai);
+            break;
+          } else if (item === ItemType.GREEN_SHELL) {
+            this._aiUseGreenShell(ai);
+            break;
+          } else if (item === ItemType.LIGHTNING) {
+            this._aiUseLightning();
             break;
           } else if (item === ItemType.BANANA) {
             box.active = true;
@@ -810,7 +1016,9 @@ export class AIItemManager {
         state.mushroomTimer -= dt;
         if (state.mushroomTimer <= 0) {
           state.mushroomTimer = 0;
-          ai.maxSpeed = state.baseMaxSpeed;
+          if (!state.lightningShrunk) {
+            ai.maxSpeed = state.baseMaxSpeed;
+          }
         }
       }
 
@@ -829,8 +1037,23 @@ export class AIItemManager {
           this._aiTriggerSlip(ai, state);
         }
       }
+
+      // 检测 AI 碰到龟壳
+      if (this.shells) {
+        for (const shell of this.shells) {
+          if (shell.active && shell.type !== 'green') { // 绿龟壳不追踪，但也会碰撞
+            const dist = ai.position.distanceTo(shell.position);
+            if (dist < ITEM_CONFIG.shellCollisionRadius) {
+              this._aiHitByShell(ai, state);
+              shell.active = false;
+              shell.mesh.visible = false;
+            }
+          }
+        }
+      }
     }
 
+    // 检测玩家碰到 AI 的龟壳（由 PlayerItemManager 处理，这里只处理 AI 碰到玩家的龟壳）
     // 清理过期香蕉
     const bananasToRemove = [];
     for (let i = 0; i < this.bananas.length; i++) {
@@ -875,6 +1098,159 @@ export class AIItemManager {
     }
   }
 
+  _aiUseRedShell(ai) {
+    // AI 使用红龟壳：追踪第一名（通常是玩家）
+    const target = this._findLeader();
+    if (!target) return;
+
+    const forward = new THREE.Vector3(
+      -Math.sin(ai.rotation),
+      0,
+      -Math.cos(ai.rotation)
+    );
+    const pos = ai.position.clone().addScaledVector(forward, 2.5);
+    pos.y = 0.5;
+
+    const shell = new Shell(this.scene, {
+      type: 'red',
+      position: pos,
+      rotation: ai.rotation,
+      speed: ITEM_CONFIG.items.red_shell.speed,
+      lifetime: ITEM_CONFIG.items.red_shell.lifetime,
+    });
+    shell.target = target;
+    this.shells.push(shell);
+
+    if (this.audio && this.audio.playShell) {
+      this.audio.playShell();
+    }
+  }
+
+  _aiUseGreenShell(ai) {
+    // AI 使用绿龟壳：直线飞行
+    const forward = new THREE.Vector3(
+      -Math.sin(ai.rotation),
+      0,
+      -Math.cos(ai.rotation)
+    );
+    const pos = ai.position.clone().addScaledVector(forward, 2.5);
+    pos.y = 0.5;
+
+    const shell = new Shell(this.scene, {
+      type: 'green',
+      position: pos,
+      rotation: ai.rotation,
+      speed: ITEM_CONFIG.items.green_shell.speed,
+      lifetime: ITEM_CONFIG.items.green_shell.lifetime,
+    });
+    this.shells.push(shell);
+
+    if (this.audio && this.audio.playShell) {
+      this.audio.playShell();
+    }
+  }
+
+  _aiUseLightning() {
+    // AI 使用闪电：全体减速（除了自己）
+    this.lightningActive = true;
+    this.lightningTimer = 4.0;
+    
+    for (const ai of this.aiKarts) {
+      if (ai.finished) continue;
+      const state = this.aiItemState.get(ai);
+      if (!state) continue;
+      
+      // 缩小 AI 自己（视觉效果）
+      ai.scale.set(0.5, 0.5, 0.5);
+      state.lightningShrunk = true;
+      // 速度减半
+      if (state.mushroomTimer > 0) {
+        ai.maxSpeed = state.baseMaxSpeed * ITEM_CONFIG.items.mushroom.boostMultiplier * 0.5;
+      } else {
+        ai.maxSpeed = state.baseMaxSpeed * 0.5;
+      }
+      state.lightningTimer = 4.0;
+    }
+    
+    // 玩家也会被影响（由 PlayerItemManager.triggerLightning 处理）
+    // 这里触发视觉特效
+    triggerLightningFlash(0.8);
+
+    if (this.audio && this.audio.playLightning) {
+      this.audio.playLightning();
+    }
+  }
+
+  _aiHitByShell(ai, state) {
+    // AI 被龟壳击中
+    state.isSlipping = true;
+    state.slipTimer = ITEM_CONFIG.shellHitStunDuration;
+    ai.velocity.multiplyScalar(ITEM_CONFIG.shellHitSpeedMult);
+
+    if (this.audio && this.audio.playSlip) {
+      this.audio.playSlip();
+    }
+    if (this.particleSystem) {
+      this.particleSystem.emitSlip(ai.position.clone());
+    }
+  }
+
+  _findLeader() {
+    // 找到排名第一的卡丁车（玩家或 AI）
+    let leader = null;
+    let bestProgress = -1;
+
+    // 检查玩家（需要从外部传入 kartPhysics）
+    // 这里简化：通常玩家是主要目标
+    // 实际游戏中可以通过 aiItemManager.playerKartPhysics 访问
+    // 暂时返回目标最近的 AI 或玩家
+    
+    // 检查 AI
+    for (const ai of this.aiKarts) {
+      if (ai.finished) continue;
+      const aiProgress = ai.lap * 10000 + (ai.lastCheckpointIndex + 1);
+      if (aiProgress > bestProgress) {
+        bestProgress = aiProgress;
+        leader = ai;
+      }
+    }
+
+    // 玩家通常在第一名，这里返回 null 让调用方处理玩家作为目标
+    return leader;
+  }
+
+  /**
+   * 触发闪电效果（由玩家使用闪电时调用）
+   */
+  triggerLightning(playerKartPhysics) {
+    this.lightningActive = true;
+    this.lightningTimer = ITEM_CONFIG.items.lightning.shrinkDuration;
+
+    for (const ai of this.aiKarts) {
+      if (ai.finished) continue;
+      const state = this.aiItemState.get(ai);
+      if (!state) continue;
+
+      // 缩小 AI
+      ai.scale.set(0.5, 0.5, 0.5);
+      state.lightningShrunk = true;
+      // 速度减半
+      if (state.mushroomTimer > 0) {
+        ai.maxSpeed = state.baseMaxSpeed * ITEM_CONFIG.items.mushroom.boostMultiplier * 0.5;
+      } else {
+        ai.maxSpeed = state.baseMaxSpeed * 0.5;
+      }
+      state.lightningTimer = ITEM_CONFIG.items.lightning.shrinkDuration;
+    }
+
+    // 视觉特效
+    triggerLightningFlash(0.8);
+
+    if (this.audio && this.audio.playLightning) {
+      this.audio.playLightning();
+    }
+  }
+
   getAIItemState(ai) {
     return this.aiItemState.get(ai);
   }
@@ -890,7 +1266,10 @@ export class AIItemManager {
         state.mushroomTimer = 0;
         state.slipTimer = 0;
         state.isSlipping = false;
+        state.lightningTimer = 0;
+        state.lightningShrunk = false;
         ai.maxSpeed = state.baseMaxSpeed;
+        ai.scale.set(1, 1, 1);
       }
     }
 
@@ -898,6 +1277,16 @@ export class AIItemManager {
       banana.dispose();
     }
     this.bananas = [];
+
+    if (this.shells) {
+      for (const shell of this.shells) {
+        shell.dispose();
+      }
+      this.shells = [];
+    }
+
+    this.lightningActive = false;
+    this.lightningTimer = 0;
   }
 
   dispose() {
@@ -905,6 +1294,13 @@ export class AIItemManager {
       banana.dispose();
     }
     this.bananas = [];
+
+    if (this.shells) {
+      for (const shell of this.shells) {
+        shell.dispose();
+      }
+      this.shells = [];
+    }
   }
 }
 

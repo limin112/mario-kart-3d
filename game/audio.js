@@ -17,6 +17,8 @@
 //   playBoostPad()                         加速带：上行 whoosh + 嗖音
 //   playRev()                              引擎轰鸣轰油门（开屏动画用），~1.1s 两段式转速扫频
 //   playRoundFanfare(final)                P18 回合播报：final=false 三音上行号角；final=true 急促警报+下行哨音
+//   playShell()                            龟壳发射：尖锐上行音
+//   playLightning()                        闪电：混沌噪声 + 下行警报
 //   toggleMute() / setMuted(m) / isMuted() 静音开关（M 键），返回静音状态
 //
 // 红线：headless 浏览器里 AudioContext 可能永远 suspended 或创建失败——
@@ -297,6 +299,22 @@ export class AudioManager {
         try { oscs.forEach(o => o.disconnect()); filter.disconnect(); g.disconnect(); } catch (e) { /* 静默 */ }
       };
     } catch (e) { /* 静默 */ }
+  }
+
+  // 龟壳发射：尖锐上行音（square 800→1600Hz，短促）
+  playShell() {
+    this._tone('square', 800, 1600, 0.15, 0.3, 0);
+  }
+
+  // 闪电：混沌噪声 + 下行警报音
+  playLightning() {
+    // 白噪声爆发
+    this._noise(0.5, 0.5, 'bandpass', 200, 4000, 0);
+    // 下行警报音三连
+    this._tone('sawtooth', 1200, 300, 0.6, 0.35, 0);
+    this._tone('square', 1500, 1500, 0.1, 0.25, 0.1);
+    this._tone('square', 1300, 1300, 0.1, 0.25, 0.25);
+    this._tone('square', 1100, 1100, 0.1, 0.25, 0.4);
   }
 
   // 静音开关：切换主音量（0 ↔ baseVolume），返回切换后的静音状态。

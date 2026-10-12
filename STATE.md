@@ -1,7 +1,8 @@
 # STATE — 项目状态（Pi 每轮迭代结束时更新）
 
-- 当前阶段：P14b 全部完成（trackdefs 三布局 + 主题参数化 + 选单界面均验收闭环）；下一步 P15 道具加深（红龟壳/绿龟壳/闪电，AI 会用）；P19/P20 大改造穿插安排
+- 当前阶段：P15 完成（道具加深：红龟壳追踪第一名、绿龟壳直线弹射、闪电全体减速，AI 会用）；下一步 P19 赛道复杂度（S 弯/发夹弯/上下坡/窄道超车点/捷径/外侧护栏/自适应路肩/弯前减速提示/加速带位置）、P20 建模品质提升；P19/P20 大改造穿插安排
 - 已完成：
+  - P15 道具加深——新增三种道具：红龟壳（追踪第一名，偏航限速 3.5 rad/s）、绿龟壳（直线高速飞行）、闪电（全屏闪光+全体缩小减速 4 秒）；projectiles.js 模块化弹体逻辑（Shell 类 + triggerLightningFlash），items.js 集成概率分布（蘑菇 40%/香蕉 25%/红壳 15%/绿壳 10%/闪电 10%），PlayerItemManager 与 AIItemManager 均支持新道具使用与碰撞检测，audio.js 新增 playShell/playLightning 音效；验证通过：node --check 全过，verify.js ok:true 零 console/page error、--drive 速度 10 km/h
   - P1 脚手架 — index.html + importmap (three@0.160.0) + main.js；Three.js 场景（地面、天空渐变、半球光+方向光阴影）；盒子卡丁车（车身、座舱、4轮）；WASD/方向键控制（油门/刹车/转向）；街机式物理（加速/摩擦/转向随速度衰减/最大速度限制）；第三人称跟随镜头带平滑插值；HUD 显示速度/圈数/时间/最快圈/名次；验证通过：node --check 语法 OK，headless Chrome 零 console error
   - P2 赛道 — 样条赛道 (CatmullRom) + 路面网格 + 护栏 + 起点线 + 树木装饰 + 加速带；出界（草地）减速逻辑；检查点防切弯；验证通过：headless Chrome 零 console error，驾驶逻辑正常
   - P3 圈速与流程 — 检查点防切弯、3 圈制、HUD 显示当前圈速/最快圈速/总时间/圈数、3-2-1-GO 倒计时、结算界面（圈速表+总时间）、R 键重开；验证通过：headless Chrome 零 console error，驾驶逻辑正常
@@ -33,4 +34,4 @@
   - P14b 选单界面（收编断尾+流程修复+验收闭环）— game/select.js（上轮断尾遗留、无 HANDOFF，本轮逐条核对后验收并修 3 处 bug）：① onSelect 传 layout.name（中文显示名）而非布局 key，选中后会生成 ?track=%E6%B2%99... 无效参数——createCard 加 trackKey 参数修好；② cancel 路径 location.reload() 但 URL 无参数→选单再弹死循环——改 hideOverlay 只淡出关选单不 reload（底层默认比赛照常跑）；③ confirm 无条件 reload——改为选 classic/classic（即底层正在跑的默认）只关选单，选其他才 replaceState+reload（R 重开自然带所选参数）。集成方式：非阻塞覆盖层（main.js 零改动）：select.js 自动启动 showTrackSelect()，无 URL 参数时选单叠在已启动游戏上（只拦 Enter/ESC，方向键穿透驾驶不受影响）；URL 显式带 ?track= 或 ?theme= 即调试入口直接进比赛不弹选单；localStorage 记忆上次选择。验证：node --check OK；verify.js 默认无参数页 ok:true 零 console/page error、--drive 10 km/h（选单不阻驾驶，红线未破）；新建专项探针 tools/verify/select-probe.mjs（保留复用）三路径全绿：A 默认页 9 张卡（3 赛道×3 主题）→点 dune/desert 卡选中→开始比赛→URL 变 ?track=dune、reload 后选单不再出现、游戏存活；B ESC 取消：选单消失、URL 不变（无 reload）、HUD 在；C ?track=glacier 调试入口：选单完全不出现、游戏启动；全路径零 error。重打 zip（+select.js）、push GitHub。证据 shots/select-pA-dune.png / select-pC-glacier.png
 - 下一步：P15 道具加深（红龟壳追踪第一名/绿龟壳直线弹射/闪电全体减速，AI 会用），从 items.js 拆新模块+main.js 集成；然后 P19（组合弯/起伏/捷径）与 P20（建模品质）大改造等监工排期或 P15 后穿插
 - 阻塞：无
-- 最后更新：2026-10-12 16:50 +08（P14b 选单界面闭环：收编断尾 select.js，修 onSelect 中文名/cancel reload 死循环/confirm 无条件 reload 三 bug；非阻塞覆盖层集成 main.js 零改动；verify.js ok:true 零 error drive 10km/h；select-probe 三路径全绿；重打 zip、push GitHub；单干未开 subagent）
+- 最后更新：2026-10-12 17:10 +08（P15 道具加深闭环：新增 projectiles.js Shell 类（红壳追踪/绿壳直线）+ triggerLightningFlash；items.js 概率分布重构、PlayerItemManager/AIItemManager 集成新道具使用与碰撞、audio.js 新增 playShell/playLightning；verify.js ok:true 零 error drive 10km/h；单干未开 subagent）
