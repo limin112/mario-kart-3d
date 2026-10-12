@@ -58,7 +58,9 @@ function pruneOld(outRoot, keep = 10) {
   fs.mkdirSync(outDir, { recursive: true });
 
   const report = { ok: false, url: args.url, out: outDir, consoleErrors: [], pageErrors: [], shots: {}, steps: [] };
-  const browser = await chromium.launch();
+  // 本机仅 8G 内存、纯软件渲染：禁 shm 避免 /dev/shm 崩溃；
+  // 全程只保持一个游戏页面活着（page1 拍完 01 立即关闭），否则渲染进程 OOM 崩溃。
+  const browser = await chromium.launch({ args: ['--disable-dev-shm-usage'] });
   const page = await browser.newPage({ viewport: { width: 1280, height: 800 } });
   page.on('console', (m) => { if (m.type() === 'error') report.consoleErrors.push(m.text().slice(0, 300)); });
   page.on('pageerror', (e) => report.pageErrors.push(String(e).slice(0, 300)));
@@ -92,24 +94,14 @@ function pruneOld(outRoot, keep = 10) {
     }, 60000, 'select overlay');
     await shot('01-select');
 
-    // ---- 取消选单，进入默认比赛（ESC = hideOverlay，不 reload）----
-    await page.keyboard.press('Escape');
-    await waitFor(page, () => {
-      const el = document.getElementById('select-title');
-      return !el || !el.offsetParent;
-    }, 20000, 'select dismissed');
-
-    // ---- 02/03/04：另起一页用调试 URL（无选单，直接 splash→展示→倒计时）----
-    const page2 = await browser.newPage({ viewport: { width: 1280, height: 800 } });
-    page2.on('console', (m) => { if (m.type() === 'error') report.consoleErrors.push(m.text().slice(0, 300)); });
-    page2.on('pageerror', (e) => report.pageErrors.push(String(e).slice(0, 300)));
-
-    await page2.goto(debugUrl.toString(), { waitUntil: 'domcontentloaded', timeout: 60000 });
+    // ---- 02/03/04：同一页面 goto 调试 URL（无选单，直接 splash→展示→倒计时）。
+    // 全程复用同一页：本机 8G 纯软渲染，两个 WebGL 游戏实例并存会 OOM 崩渲染进程（实测第二页被杀）。----
+    await page.goto(debugUrl.toString(), { waitUntil: 'domcontentloaded', timeout: 60000 });
 
     // headless 软渲染下倒计时整段只占约 1 帧（stepElapsed 一次跳完 1.6s），
     // 轮询永远追不上——在倒计时链启动（splash 2.4s + 展示 2s ≈ 4.4s）之前，
     // 先给 #countdown 挂 MutationObserver 把"出现过"记到 window.__cdSeen。
-    await page2.evaluate(() => {
+    await page.evaluate(() => {
       window.__cdSeen = false;
       const el = document.getElementById('countdown');
       if (el && el.style.display === 'block') window.__cdSeen = true;
@@ -118,10 +110,10 @@ function pruneOld(outRoot, keep = 10) {
       }).observe(el, { attributes: true, attributeFilter: ['style'] });
     });
 
-    await waitFor(page2, () => window.__cdSeen === true, 40000, 'countdown seen (observer)');
+    await waitFor(page, () => window.__cdSeen === true, 40000, 'countdown seen (observer)');
 
     // 等倒计时消失（GO 结束 = 发车）
-    await waitFor(page2, () => {
+    await waitFor(page, () => {
       const el = document.getElementById('countdown');
       return !!el && el.style.display === 'none';
     }, 30000, 'countdown finished (GO) debug');
@@ -130,17 +122,17 @@ function pruneOld(outRoot, keep = 10) {
     await shot('02-start');
 
     // ---- 03 驾驶 5 秒后（先确认比赛已开始：HUD 总时间在走。注意 HUD 没有 #time，是 #totalTime）----
-    await waitFor(page2, () => {
+    await waitFor(page, () => {
       const el = document.getElementById('totalTime');
       return !!el && parseFloat(el.textContent) > 0.5;
     }, 15000, 'race started (HUD totalTime moving)');
-    await page2.keyboard.down('ArrowUp');
-    await page2.waitForTimeout(5000);
-    await page2.keyboard.up('ArrowUp');
+    await page.keyboard.down('ArrowUp');
+    await page.waitForTimeout(5000);
+    await page.keyboard.up('ArrowUp');
     await shot('03-drive5s');
 
     // ---- 04 俯视赛道全景（后注册 rAF 压过游戏跟随相机，截图后停掉即恢复）----
-    await page2.evaluate(() => {
+    await page.evaluate(() => {
       const { scene, camera, renderer, track } = window.__mk;
       let minx = 1e9, maxx = -1e9, minz = 1e9, maxz = -1e9;
       for (let i = 0; i < 96; i++) {
@@ -162,9 +154,9 @@ function pruneOld(outRoot, keep = 10) {
       };
       loop();
     });
-    await page2.waitForTimeout(3000);
+    await page.waitForTimeout(3000);
     await shot('04-overhead');
-    await page2.evaluate(() => { window.__ovStop = true; });
+    await page.evaluate(() => { window.__ovStop = true; });
 
     // ---- 00 2x2 拼盘（页内 canvas 合成，零外部依赖；必须在关页之前跑）----
     const names = ['01-select', '02-start', '03-drive5s', '04-overhead'];
@@ -184,7 +176,6 @@ function pruneOld(outRoot, keep = 10) {
     report.shots['00-grid'] = gridFile;
     report.steps.push('shot 00-grid ok');
 
-    await page2.close();
     await page.close();
   } catch (e) {
     report.fatal = String(e && e.message ? e.message : e).slice(0, 300);
