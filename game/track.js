@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { getTheme } from './themes.js';
 
 /**
  * 赛道模块：基于 CatmullRom 样条的闭环赛道
@@ -64,7 +65,7 @@ function createAsphaltTexture() {
  * 创建红白路肩纹理
  * @returns {THREE.CanvasTexture}
  */
-function createCurbTexture() {
+function createCurbTexture(colorA = '#ffffff', colorB = '#cc0000') {
   const size = 512;
   const stripeWidth = 32;
   const canvas = document.createElement('canvas');
@@ -72,13 +73,13 @@ function createCurbTexture() {
   canvas.height = size;
   const ctx = canvas.getContext('2d');
   
-  // 红白相间条纹（沿 UV 的 V 方向）
+  // 相间条纹（沿 UV 的 V 方向，颜色由主题提供，默认红白）
   for (let y = 0; y < size; y += stripeWidth * 2) {
-    // 白色条纹
-    ctx.fillStyle = '#ffffff';
+    // 条纹 A
+    ctx.fillStyle = colorA;
     ctx.fillRect(0, y, size, stripeWidth);
-    // 红色条纹
-    ctx.fillStyle = '#cc0000';
+    // 条纹 B
+    ctx.fillStyle = colorB;
     ctx.fillRect(0, y + stripeWidth, size, stripeWidth);
   }
   
@@ -374,8 +375,10 @@ const TRACK_CONFIG = {
 };
 
 class Track {
-  constructor(scene) {
+  constructor(scene, themeName = 'classic') {
     this.scene = scene;
+    // P14：主题配色（纯数据，见 themes.js；未知名字兜底 classic，零视觉回归）
+    this.theme = getTheme(themeName);
     this.spline = null;
     this.roadMesh = null;
     this.shoulderMeshes = [];
@@ -458,7 +461,7 @@ class Track {
     
     const mat = new THREE.MeshStandardMaterial({
       map: asphaltTex,
-      color: 0x444444,
+      color: this.theme.roadColor ?? 0x444444,
       roughness: 0.9,
       metalness: 0.1,
       // P13: 路面与地面几乎共面，polygonOffset 保证路面深度始终压过地面（远距也稳定）
@@ -498,7 +501,7 @@ class Track {
       linePositions[1].push(right.x, right.y, right.z);
     }
 
-    const lineMat = new THREE.LineBasicMaterial({ color: 0xffffff, opacity: 0.9, transparent: true });
+    const lineMat = new THREE.LineBasicMaterial({ color: this.theme.edgeLine ?? 0xffffff, opacity: 0.9, transparent: true });
 
     for (let side = 0; side < 2; side++) {
       const geo = new THREE.BufferGeometry();
@@ -549,8 +552,8 @@ class Track {
       geo.setAttribute('uv', new THREE.Float32BufferAttribute(uvs, 2));
       geo.setIndex(indices);
 
-      // 红白路肩纹理
-      const curbTex = createCurbTexture();
+      // 路肩条纹纹理（颜色随主题）
+      const curbTex = createCurbTexture(this.theme.curbA ?? '#ffffff', this.theme.curbB ?? '#cc0000');
       curbTex.repeat.set(TRACK_CONFIG.segments / 4, 1);
       
       const mat = new THREE.MeshStandardMaterial({
@@ -585,8 +588,8 @@ class Track {
 
     const railGeo = new THREE.BoxGeometry(1, guardrailHeight, 0.15);
     const postGeo = new THREE.BoxGeometry(0.2, guardrailHeight + 0.3, 0.2);
-    const railMat = new THREE.MeshStandardMaterial({ color: 0xcccccc, roughness: 0.3, metalness: 0.7 });
-    const postMat = new THREE.MeshStandardMaterial({ color: 0x888888, roughness: 0.5, metalness: 0.5 });
+    const railMat = new THREE.MeshStandardMaterial({ color: this.theme.rail ?? 0xcccccc, roughness: 0.3, metalness: 0.7 });
+    const postMat = new THREE.MeshStandardMaterial({ color: this.theme.post ?? 0x888888, roughness: 0.5, metalness: 0.5 });
 
     for (let side = -1; side <= 1; side += 2) {
       const railGroup = new THREE.Group();
@@ -672,7 +675,7 @@ class Track {
     const stripeWidth = (halfWidth * 2) / stripeCount;
 
     for (let i = 0; i < stripeCount; i++) {
-      const color = i % 2 === 0 ? 0xffffff : 0xff0000;
+      const color = i % 2 === 0 ? (this.theme.stripeA ?? 0xffffff) : (this.theme.stripeB ?? 0xff0000);
       const offset = (i - stripeCount / 2 + 0.5) * stripeWidth;
       // 相对于组的局部坐标：X轴为左法线方向（组已旋转），Y向上
       const pos = new THREE.Vector3(-offset, 0.03, 0); // -offset 因为局部+X是左法线
@@ -694,8 +697,8 @@ class Track {
     const archPoints = archCurve.getPoints(32);
     const archGeo = new THREE.TubeGeometry(new THREE.CatmullRomCurve3(archPoints.map(p => new THREE.Vector3(p.x, p.y, 0))), 32, 0.35, 8, false);
     const archMat = new THREE.MeshStandardMaterial({ 
-      color: 0xffdd00, 
-      emissive: 0x443300, 
+      color: this.theme.arch ?? 0xffdd00, 
+      emissive: this.theme.archEmissive ?? 0x443300, 
       roughness: 0.3, 
       metalness: 0.5 
     });
@@ -775,24 +778,24 @@ class Track {
       { // 松树
         trunkGeo: new THREE.CylinderGeometry(0.25, 0.35, 2.5, 6),
         crownGeo: new THREE.ConeGeometry(1.5, 5, 6),
-        trunkColor: 0x3d2a1a,
-        crownColor: 0x0d4010,
+        trunkColor: this.theme.trunkColors?.[0] ?? 0x3d2a1a,
+        crownColor: this.theme.crownColors?.[0] ?? 0x0d4010,
         crownOffsetY: 3.5,
         scale: 1.0,
       },
       { // 阔叶树
         trunkGeo: new THREE.CylinderGeometry(0.4, 0.5, 2, 6),
         crownGeo: new THREE.SphereGeometry(2, 8, 6),
-        trunkColor: 0x4a2f1a,
-        crownColor: 0x1b5e20,
+        trunkColor: this.theme.trunkColors?.[1] ?? 0x4a2f1a,
+        crownColor: this.theme.crownColors?.[1] ?? 0x1b5e20,
         crownOffsetY: 3,
         scale: 1.2,
       },
       { // 棕榈树
         trunkGeo: new THREE.CylinderGeometry(0.2, 0.3, 4, 6),
         crownGeo: new THREE.ConeGeometry(2.5, 1.5, 6),
-        trunkColor: 0x8b7355,
-        crownColor: 0x2d5a1a,
+        trunkColor: this.theme.trunkColors?.[2] ?? 0x8b7355,
+        crownColor: this.theme.crownColors?.[2] ?? 0x2d5a1a,
         crownOffsetY: 4.5,
         scale: 0.8,
       },
@@ -874,16 +877,17 @@ class Track {
     
     // 天空渐变：顶部深蓝 -> 地平线浅蓝/橙
   const gradient = ctx.createLinearGradient(0, 0, 0, canvas.height);
-  gradient.addColorStop(0, '#001a33');      // 头顶深蓝
-  gradient.addColorStop(0.4, '#003d66');    // 中上部
-  gradient.addColorStop(0.6, '#4a90d9');    // 地平线附近
-  gradient.addColorStop(0.8, '#ff8c42');    // 夕阳色
-  gradient.addColorStop(1, '#ff6b35');      // 地平线
+  // 渐变停靠点随主题（默认 classic = 原深蓝→夕阳渐变）
+  for (const [offset, css] of (this.theme.skyStops ?? [
+    [0, '#001a33'], [0.4, '#003d66'], [0.6, '#4a90d9'], [0.8, '#ff8c42'], [1, '#ff6b35'],
+  ])) {
+    gradient.addColorStop(offset, css);
+  }
   ctx.fillStyle = gradient;
   ctx.fillRect(0, 0, canvas.width, canvas.height);
   
   // 太阳
-  ctx.fillStyle = 'rgba(255, 255, 200, 0.9)';
+  ctx.fillStyle = this.theme.sunDisc ?? 'rgba(255, 255, 200, 0.9)';
   ctx.beginPath();
   ctx.arc(canvas.width * 0.8, canvas.height * 0.3, 60, 0, Math.PI * 2);
   ctx.fill();
@@ -893,8 +897,8 @@ class Track {
     canvas.width * 0.8, canvas.height * 0.3, 0,
     canvas.width * 0.8, canvas.height * 0.3, 120
   );
-  sunGlow.addColorStop(0, 'rgba(255, 255, 150, 0.4)');
-  sunGlow.addColorStop(1, 'rgba(255, 200, 100, 0)');
+  sunGlow.addColorStop(0, this.theme.sunGlowInner ?? 'rgba(255, 255, 150, 0.4)');
+  sunGlow.addColorStop(1, this.theme.sunGlowOuter ?? 'rgba(255, 200, 100, 0)');
   ctx.fillStyle = sunGlow;
   ctx.beginPath();
   ctx.arc(canvas.width * 0.8, canvas.height * 0.3, 120, 0, Math.PI * 2);
@@ -916,7 +920,7 @@ class Track {
       const cloudMat = new THREE.MeshBasicMaterial({
         map: cloudTex,
         transparent: true,
-        opacity: 0.7,
+        opacity: this.theme.cloudOpacity ?? 0.7,
         side: THREE.DoubleSide,
         depthWrite: false,
       });
@@ -977,12 +981,12 @@ class Track {
     
     // 看台材质
     const concreteMat = new THREE.MeshStandardMaterial({
-      color: 0x999999,
+      color: this.theme.concrete ?? 0x999999,
       roughness: 0.8,
       metalness: 0.1,
     });
     const seatMat = new THREE.MeshStandardMaterial({
-      color: 0xcc0000,
+      color: this.theme.seat ?? 0xcc0000,
       roughness: 0.7,
       metalness: 0.1,
     });
@@ -1368,7 +1372,7 @@ class Track {
         geo.computeBoundingSphere();
 
         const mat = new THREE.MeshBasicMaterial({
-          color: 0x00aaff,
+          color: this.theme.boostColor ?? 0x00aaff,
           transparent: true,
           opacity: 0.6,
           side: THREE.DoubleSide,

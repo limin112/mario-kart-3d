@@ -1,0 +1,52 @@
+你是游戏开发 agent 的并行 subagent。工作目录 ~/workspace/mario-kart-3d/。
+
+先按顺序读三个文件：REQUIREMENTS.md、STATE.md、GUIDANCE.md（都在项目根目录）。
+
+# 你的子任务（P14 新地图·第一步：赛道布局数据）
+
+新建一个文件 game/trackdefs.js —— 纯数据模块，为 P14 新赛道提供样条控制点布局。
+主 agent 正在并行改 track.js/themes.js/main.js，你【只许新建这一个文件】。
+
+## 文件契约（必须严格遵守，主 agent 按此对接）
+
+game/trackdefs.js 内容要求：
+- 纯数据 ES module：零 import、零依赖、零副作用（不碰 document/window/THREE）。
+- 只导出一个常量：export const TRACK_LAYOUTS = { classic: {...}, dune: {...}, glacier: {...} };
+- 每个布局对象字段：
+  - name: 中文名（如 '经典草原环线' / '沙漠环丘赛道' / '雪山冰原赛道'）
+  - theme: 建议主题名，字符串，取值 'classic' / 'desert' / 'snow'（对应主 agent 的 themes.js）
+  - roadWidth: 路面半宽，数字（classic 用 12，新图可 10~13）
+  - controlPoints: [[x,z],[x,z],...] 纯数字数组的数组（不要 THREE.Vector3，不要 y 分量）
+
+## 布局设计要求
+
+- classic：必须与现有 game/track.js 里 TRACK_CONFIG.controlPoints 的 9 个点完全一致（把它们转成 [x,z] 数组抄过来）。
+- dune（沙漠）：10~13 个点，要有 1 条长直道（连续两段各 >45m 且方向近似）和至少 1 个发夹弯（连续三点转向 >120°）。
+- glacier（雪山）：10~13 个点，要有 S 组合弯（连续两个反向弯）和 1 个发夹弯。
+- 所有布局：坐标范围 |x|,|z| ≤ 90；相邻控制点间距 15~60m；控制点依次连线构成的多边形必须是简单多边形（不自交）——闭环赛道不自交是硬要求。
+- 曲线是 CatmullRom 闭环（centripetal, tension 0.5），点别太密也别共线太多，保证弯形明显。
+
+## 验证（必须做，结果写进 HANDOFF）
+
+1. node --check：把 trackdefs.js 拷成 /tmp/trackdefs.mjs 跑 node --check。
+2. 写一个临时校验脚本放 /tmp（不要留在仓库里），import TRACK_LAYOUTS 并断言：
+   - 三个 key 都在、字段齐全、controlPoints 全是数字对；
+   - classic 的 9 个点与 track.js 里现有值一致（自己 grep 对照）；
+   - 点数、坐标范围、相邻间距 15~60m；
+   - 线段两两求交（排除相邻段共享端点）验证不自交；
+   - dune 有长直道、glacier 有发夹（按上面定义的角度/长度算）。
+   全部 PASS 才算完成。
+
+## 文件白名单（铁律）
+
+你只能新建这两个文件：
+- game/trackdefs.js
+- scripts/HANDOFF-trackdefs.md
+严禁修改/创建任何其他文件，尤其 track.js、themes.js、main.js、index.html、
+STATE.md、LOG.md、GUIDANCE.md、REQUIREMENTS.md、scripts/ 下除 HANDOFF 外的任何文件。
+不要起 http.server、不要跑 verify.js（主 agent 负责集成后统一验证）。
+
+## 完成后
+
+把结果写进 scripts/HANDOFF-trackdefs.md：做了什么、文件路径、校验脚本断言清单与结果（全 PASS）、
+三个布局各用一行描述（点数/最长直道/最急弯道角度）。最后用中文 2-3 行总结。

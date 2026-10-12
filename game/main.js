@@ -7,6 +7,7 @@ import { createKart, createShowcaseKart, updateShowcaseKart, resetKartForRace } 
 import { AudioManager } from './audio.js';
 import { startSplash } from './splash.js';
 import { showRoundBanner } from './rounds.js';
+import { getTheme } from './themes.js';
 
 // ============ 全局状态 ============
 const state = {
@@ -47,7 +48,11 @@ renderer.shadowMap.enabled = true;
 renderer.shadowMap.type = THREE.PCFSoftShadowMap;
 
 const scene = new THREE.Scene();
-scene.background = new THREE.Color(0x87ceeb); // 天空蓝（比赛模式）
+// P14：主题选择（URL 参数 ?theme=classic|desert|snow，未知名字兜底 classic）。
+// 本步只接入配色参数化；选单界面下轮接在这里（THEME_NAME 改由选单设置）。
+const THEME_NAME = new URLSearchParams(location.search).get('theme') || 'classic';
+const raceTheme = getTheme(THEME_NAME);
+scene.background = new THREE.Color(raceTheme.sceneBg ?? 0x87ceeb); // 天空蓝（比赛模式）
 
 const showcaseScene = new THREE.Scene();
 showcaseScene.background = new THREE.Color(0x0a0a12); // 深色舞台背景
@@ -60,10 +65,10 @@ camera.position.set(0, 12, 30);
 camera.lookAt(0, 1.5, 0);
 
 // 灯光（P6 优化：更真实的日照、更大范围阴影、环境光增强）
-const hemiLight = new THREE.HemisphereLight(0xffeedd, 0x445566, 1.0); // 略带暖色的天光 + 冷色地反射
+const hemiLight = new THREE.HemisphereLight(raceTheme.hemiSky ?? 0xffeedd, raceTheme.hemiGround ?? 0x445566, raceTheme.hemiIntensity ?? 1.0); // 略带暖色的天光 + 冷色地反射
 scene.add(hemiLight);
 
-const dirLight = new THREE.DirectionalLight(0xffffee, 2.0); // 暖白色阳光，强度提升
+const dirLight = new THREE.DirectionalLight(raceTheme.sunColor ?? 0xffffee, raceTheme.sunIntensity ?? 2.0); // 暖白色阳光，强度提升
 dirLight.position.set(80, 150, 60);
 dirLight.castShadow = true;
 dirLight.shadow.mapSize.width = 4096;  // 更高分辨率阴影贴图
@@ -92,7 +97,7 @@ scene.add(ambientLight);
 // ============ 地面 ============
 const groundGeo = new THREE.PlaneGeometry(500, 500);
 const groundMat = new THREE.MeshStandardMaterial({
-  color: 0x3a5f0b,
+  color: raceTheme.ground ?? 0x3a5f0b,
   roughness: 0.9,
   metalness: 0.1,
 });
@@ -102,7 +107,7 @@ ground.receiveShadow = true;
 scene.add(ground);
 
 // 网格辅助线
-const gridHelper = new THREE.GridHelper(500, 50, 0x2d4a08, 0x2d4a08);
+const gridHelper = new THREE.GridHelper(500, 50, raceTheme.grid ?? 0x2d4a08, raceTheme.grid ?? 0x2d4a08);
 gridHelper.position.y = 0.01;
 scene.add(gridHelper);
 
@@ -203,7 +208,7 @@ function setupShowcaseScene() {
 setupShowcaseScene();
 
 // ============ 赛道系统 (P2) ============
-const track = new Track(scene);
+const track = new Track(scene, THEME_NAME);
 window.track = track; // DEBUG
 
 // ============ 粒子系统 (P6: 收尾) ============
