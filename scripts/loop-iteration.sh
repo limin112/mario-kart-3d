@@ -14,7 +14,10 @@ MODEL_FALLBACK='openrouter-free/nvidia/nemotron-3-super-120b-a12b:free'
 # 裸 curl 只会拿到 401，所以这里必须带上 models.json 里的 strata key（现取现用，不落盘）。
 # （用户本地机器睡觉/离线时这里不通，直接跳过，避免 pi 空转 25 分钟。）
 qwen_up() {
-  [ "$(python3 -c "
+  # 中继偶发抖动，重试 3 次（间隔 3s）再判 down
+  local i r
+  for i in 1 2 3; do
+    r="$(python3 -c "
 import json, os, urllib.request
 try:
     key = json.load(open(os.path.expanduser('~/.pi/agent/models.json')))['providers']['strata']['apiKey']
@@ -23,7 +26,11 @@ try:
     print(urllib.request.urlopen(req, timeout=25).status)
 except Exception:
     print(0)
-")" = "200" ]
+")"
+    [ "$r" = "200" ] && return 0
+    sleep 3
+  done
+  return 1
 }
 
 # 1. 确保代理存活（cron 环境变量齐全，surrogate 走 authd+egress 代理）
