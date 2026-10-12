@@ -261,3 +261,10 @@
   验收：shot.js 一次跑完 4 张截图无报错；Pi 下次改广告牌/赛道时用它自验证。
 
 - 2026-10-12 19:15 【babysit】两小时进展盘点：① projectiles subagent 重试成功，game/projectiles.js 已产出（Shell 类红/绿龟壳 + triggerLightningFlash，HANDOFF 契约零偏离），这一步走得对；② ai-upgrade subagent 和 billboard-probe subagent 相继 "Stream ended without finish_reason" 秒断——Qwen 流式通道今天在这类小任务上已经是第 5 次断了。别灰心，但也别再往这个通道里扔小任务：用户 18:55 的广告牌镜像修复、18:59 的 shot.js 截图模块，这两个都小（广告牌就是 track.js 里平面朝向/UV 纹理那一小块，shot.js 是独立 playwright 脚本 tools/shot/shot.js），主循环亲手写最快，写完老规矩 verify.js + 截图自验。③ projectiles.js 还没集成：items.js/main.js 接红壳追踪第一名/绿壳直线/闪电全体减速，集成了 P15 才算闭环。④ push 欠账（15:35 铁律）：game/projectiles.js、game/ai.js（__ai 钩子）、tools/verify/ai-probe.mjs 都还没 commit，本轮收尾一起推。verify.js 本轮 ok:true 零 error、--drive 10 km/h，红线稳的。
+
+- 2026-10-12 19:35 【taskmaster】本轮检查：Pi 本轮已亲手修好广告牌（track.js：side=-1 朝向条件写反致背面朝赛道+负 seed 致 "undefined"，两处已修），taskmaster 代 verify.js 验收 ok:true 零 console/page error、--drive 10 km/h，红线稳；已 commit+push → main @ 461ed54d。projectiles.js 已在仓库（HANDOFF 齐）但 items.js/main.js 集成仍未动；shot.js 还没做。Qwen 健康：18182 chat 200、finish_reason=stop、content 非 null（reasoning 有值系 thinking 模式，预期内）；8901 200；loop-daemon active。下一轮按序推进：
+  1. 【shot.js 截图模块】（用户 18:59 明确需求，优先级最高——以后所有视觉改动都要走它自验）按 18:59 条契约亲手写 tools/shot/shot.js（选单/发车/驾驶5秒/俯视全景 4 张 + 2x2 拼盘，`node tools/shot/shot.js --out shots/auto-<时间>/`，shots/auto 只留最近 10 组）；window.__mk 钩子已就位可用。验收：一次跑完 4 张无报错，文件名带场景+时间戳。
+  2. 【广告牌修复视觉验收】用 shot.js 出驾驶视角截图，肉眼确认广告牌文字全部正向可读、无 "undefined"（像素探针代替不了人眼，这次必须看图）。无误后在 LOG 记一条闭环。
+  3. 【P15 集成】projectiles.js → items.js/main.js：红壳追踪第一名 / 绿壳直线飞行 / 闪电全体减速；AI 会捡会用（ai.js 已有探针钩子可复用验证）。集成完老规矩 verify.js + shot.js 自验，通过算 P15 闭环。
+  4. 【P19 提速预告】P15 闭环后直接上 P19 赛道复杂化（用户 17:06、18:55 两次点名"赛道还是圆形"）：S 弯/发夹弯/上下坡，trackdefs 布局数据按 P19 标准重做。这是用户的明确催促，不要再拖。
+  记住：不要再给 Qwen 流式 subagent 派小任务（今天第 5+ 次秒断了），小的都自己写。
