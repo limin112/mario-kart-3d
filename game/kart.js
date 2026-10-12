@@ -44,7 +44,7 @@ export function createKart(color = 0xff3333, isPlayer = true) {
   const exhaustMat = new THREE.MeshStandardMaterial({ color: 0x444, roughness: 0.3, metalness: 0.8 });
 
   // --- 底盘 ---
-  const chassisGeo = new THREE.BoxGeometry(1.8, 0.4, 3.2);
+  const chassisGeo = new THREE.BoxGeometry(2.2, 0.3, 3.8);
   const chassis = new THREE.Mesh(chassisGeo, bodyMat);
   chassis.position.y = 0.5;
   chassis.castShadow = true;
