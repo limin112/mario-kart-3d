@@ -8,6 +8,7 @@ import { AudioManager } from './audio.js';
 import { startSplash } from './splash.js';
 import { showRoundBanner } from './rounds.js';
 import { getTheme } from './themes.js';
+import { TRACK_LAYOUTS } from './trackdefs.js';
 
 // ============ 全局状态 ============
 const state = {
@@ -49,8 +50,10 @@ renderer.shadowMap.type = THREE.PCFSoftShadowMap;
 
 const scene = new THREE.Scene();
 // P14：主题选择（URL 参数 ?theme=classic|desert|snow，未知名字兜底 classic）。
-// 本步只接入配色参数化；选单界面下轮接在这里（THEME_NAME 改由选单设置）。
-const THEME_NAME = new URLSearchParams(location.search).get('theme') || 'classic';
+// P14b：赛道布局（?track=classic|dune|glacier）；未指定 theme 时用布局建议主题，显式 ?theme= 优先。
+const URL_PARAMS = new URLSearchParams(location.search);
+const TRACK_NAME = URL_PARAMS.get('track') || 'classic';
+const THEME_NAME = URL_PARAMS.get('theme') || (TRACK_LAYOUTS[TRACK_NAME] && TRACK_LAYOUTS[TRACK_NAME].theme) || 'classic';
 const raceTheme = getTheme(THEME_NAME);
 scene.background = new THREE.Color(raceTheme.sceneBg ?? 0x87ceeb); // 天空蓝（比赛模式）
 
@@ -208,7 +211,7 @@ function setupShowcaseScene() {
 setupShowcaseScene();
 
 // ============ 赛道系统 (P2) ============
-const track = new Track(scene, THEME_NAME);
+const track = new Track(scene, THEME_NAME, TRACK_NAME);
 window.track = track; // DEBUG
 
 // ============ 粒子系统 (P6: 收尾) ============

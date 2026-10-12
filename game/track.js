@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import { getTheme } from './themes.js';
+import { TRACK_LAYOUTS } from './trackdefs.js';
 
 /**
  * 赛道模块：基于 CatmullRom 样条的闭环赛道
@@ -375,8 +376,15 @@ const TRACK_CONFIG = {
 };
 
 class Track {
-  constructor(scene, themeName = 'classic') {
+  constructor(scene, themeName = 'classic', layoutName = 'classic') {
     this.scene = scene;
+    // P14b：赛道布局（纯数据，见 trackdefs.js；未知名字兜底 classic，零回归）
+    this.layout = TRACK_LAYOUTS[layoutName] || TRACK_LAYOUTS.classic;
+    this.cfg = {
+      ...TRACK_CONFIG,
+      controlPoints: this.layout.controlPoints.map(([x, z]) => new THREE.Vector3(x, 0, z)),
+      roadWidth: this.layout.roadWidth || TRACK_CONFIG.roadWidth,
+    };
     // P14：主题配色（纯数据，见 themes.js；未知名字兜底 classic，零视觉回归）
     this.theme = getTheme(themeName);
     this.spline = null;
@@ -407,16 +415,16 @@ class Track {
   }
 
   _createSpline() {
-    // 创建闭环 CatmullRom 样条
-    const points = TRACK_CONFIG.controlPoints;
+    // 创建闭环 CatmullRom 样条（控制点来自 this.layout，经 this.cfg 转成 Vector3）
+    const points = this.cfg.controlPoints;
     this.spline = new THREE.CatmullRomCurve3(points, true, 'centripetal', 0.5);
     this.trackLength = this.spline.getLength();
   }
 
   _createRoad() {
     // 生成路面几何体：沿样条挤出矩形
-    const segments = TRACK_CONFIG.segments;
-    const halfWidth = TRACK_CONFIG.roadWidth;
+    const segments = this.cfg.segments;
+    const halfWidth = this.cfg.roadWidth;
 
     const positions = [];
     const normals = [];
@@ -457,7 +465,7 @@ class Track {
     // 程序化沥青纹理
     const asphaltTex = createAsphaltTexture();
     // UV 缩放：沿赛道方向重复
-    asphaltTex.repeat.set(TRACK_CONFIG.segments / 8, 1);
+    asphaltTex.repeat.set(this.cfg.segments / 8, 1);
     
     const mat = new THREE.MeshStandardMaterial({
       map: asphaltTex,
@@ -482,7 +490,7 @@ class Track {
   }
 
   _createEdgeLines(halfWidth) {
-    const segments = TRACK_CONFIG.segments;
+    const segments = this.cfg.segments;
     const linePositions = [[], []]; // 左、右边线
 
     for (let i = 0; i <= segments; i++) {
@@ -513,9 +521,9 @@ class Track {
 
   _createShoulders() {
     // 路肩（草地/泥土带）——路面两侧各 4 米
-    const segments = TRACK_CONFIG.segments;
-    const roadHalf = TRACK_CONFIG.roadWidth;
-    const shoulderW = TRACK_CONFIG.shoulderWidth;
+    const segments = this.cfg.segments;
+    const roadHalf = this.cfg.roadWidth;
+    const shoulderW = this.cfg.shoulderWidth;
 
     for (let side = -1; side <= 1; side += 2) {
       const positions = [];
@@ -554,7 +562,7 @@ class Track {
 
       // 路肩条纹纹理（颜色随主题）
       const curbTex = createCurbTexture(this.theme.curbA ?? '#ffffff', this.theme.curbB ?? '#cc0000');
-      curbTex.repeat.set(TRACK_CONFIG.segments / 4, 1);
+      curbTex.repeat.set(this.cfg.segments / 4, 1);
       
       const mat = new THREE.MeshStandardMaterial({
         map: curbTex,
@@ -579,11 +587,11 @@ class Track {
 
   _createGuardrails() {
     // 护栏：在路肩外侧
-    const segments = TRACK_CONFIG.segments;
-    const roadHalf = TRACK_CONFIG.roadWidth;
-    const shoulderW = TRACK_CONFIG.shoulderWidth;
-    const guardrailOffset = TRACK_CONFIG.guardrailOffset;
-    const guardrailHeight = TRACK_CONFIG.guardrailHeight;
+    const segments = this.cfg.segments;
+    const roadHalf = this.cfg.roadWidth;
+    const shoulderW = this.cfg.shoulderWidth;
+    const guardrailOffset = this.cfg.guardrailOffset;
+    const guardrailHeight = this.cfg.guardrailHeight;
     const postSpacing = 4; // 柱子间距
 
     const railGeo = new THREE.BoxGeometry(1, guardrailHeight, 0.15);
@@ -661,7 +669,7 @@ class Track {
 
   _createStartLine() {
     // 起终点线（红白相间）
-    const halfWidth = TRACK_CONFIG.roadWidth;
+    const halfWidth = this.cfg.roadWidth;
     const pt = this.spline.getPointAt(0);
     const tangent = this.spline.getTangentAt(0).normalize(); // 前进方向（切线）
     const normal = new THREE.Vector3(-tangent.z, 0, tangent.x); // 左侧法线
@@ -767,11 +775,11 @@ class Track {
 
   _createTrees() {
     // 沿赛道两侧生成树木
-    const segments = TRACK_CONFIG.segments;
-    const roadHalf = TRACK_CONFIG.roadWidth;
-    const shoulderW = TRACK_CONFIG.shoulderWidth;
-    const minDist = TRACK_CONFIG.treeMinDist;
-    const maxDist = TRACK_CONFIG.treeMaxDist;
+    const segments = this.cfg.segments;
+    const roadHalf = this.cfg.roadWidth;
+    const shoulderW = this.cfg.shoulderWidth;
+    const minDist = this.cfg.treeMinDist;
+    const maxDist = this.cfg.treeMaxDist;
 
     // 树木类型：松树(圆锥)、阔叶树(球体)、棕榈树
     const treeTypes = [
@@ -804,7 +812,7 @@ class Track {
     for (let i = 0; i < segments; i++) {
       const t = i / segments;
       // 概率生成
-      if (Math.random() > TRACK_CONFIG.treeDensity) continue;
+      if (Math.random() > this.cfg.treeDensity) continue;
 
       for (let side = -1; side <= 1; side += 2) {
         if (Math.random() > 0.5) continue; // 进一步稀疏
@@ -974,9 +982,9 @@ class Track {
       { t: 0.75, side: -1, length: 30, rows: 5, name: 'turn3' },    // 第3弯内侧
     ];
     
-    const roadHalf = TRACK_CONFIG.roadWidth;
-    const shoulderW = TRACK_CONFIG.shoulderWidth;
-    const guardrailOffset = TRACK_CONFIG.guardrailOffset;
+    const roadHalf = this.cfg.roadWidth;
+    const shoulderW = this.cfg.shoulderWidth;
+    const guardrailOffset = this.cfg.guardrailOffset;
     const baseOffset = roadHalf + shoulderW + guardrailOffset + 3; // 看台起始距离
     
     // 看台材质
@@ -1146,9 +1154,9 @@ class Track {
     this.tracksideDecorations = [];
     this.decorationTextures = [];
     
-    const roadHalf = TRACK_CONFIG.roadWidth;
-    const shoulderW = TRACK_CONFIG.shoulderWidth;
-    const guardrailOffset = TRACK_CONFIG.guardrailOffset;
+    const roadHalf = this.cfg.roadWidth;
+    const shoulderW = this.cfg.shoulderWidth;
+    const guardrailOffset = this.cfg.guardrailOffset;
     const baseOffset = roadHalf + shoulderW + guardrailOffset + 2;
     
     // --- 路灯 ---
@@ -1325,10 +1333,10 @@ class Track {
 
   _createBoostZones() {
     // 蓝色加速带
-    const halfWidth = TRACK_CONFIG.roadWidth;
-    const boostWidth = TRACK_CONFIG.boostWidth;
+    const halfWidth = this.cfg.roadWidth;
+    const boostWidth = this.cfg.boostWidth;
 
-    for (const zone of TRACK_CONFIG.boostZones) {
+    for (const zone of this.cfg.boostZones) {
       const tCenter = zone.center;
       const tHalfLen = zone.length / 2;
       const tStart = (tCenter - tHalfLen + 1) % 1;
@@ -1338,7 +1346,7 @@ class Track {
       const ranges = tStart < tEnd ? [[tStart, tEnd]] : [[tStart, 1], [0, tEnd]];
 
       for (const [ts, te] of ranges) {
-        const segments = Math.max(4, Math.round((te - ts) * TRACK_CONFIG.segments));
+        const segments = Math.max(4, Math.round((te - ts) * this.cfg.segments));
         const positions = [];
         const uvs = [];
         const indices = [];
@@ -1388,8 +1396,8 @@ class Track {
 
   _createCheckpoints() {
     // 均匀分布的检查点，防止切弯
-    const count = TRACK_CONFIG.checkpointCount;
-    const halfWidth = TRACK_CONFIG.roadWidth * 1.5; // 检查点比路面宽，防止漏判
+    const count = this.cfg.checkpointCount;
+    const halfWidth = this.cfg.roadWidth * 1.5; // 检查点比路面宽，防止漏判
 
     for (let i = 0; i < count; i++) {
       const t = (i + 0.5) / count;
@@ -1455,7 +1463,7 @@ class Track {
    */
   isOnTrack(position) {
     const { distance } = this.getClosestPoint(position);
-    const maxDist = TRACK_CONFIG.roadWidth + TRACK_CONFIG.shoulderWidth;
+    const maxDist = this.cfg.roadWidth + this.cfg.shoulderWidth;
     return distance <= maxDist;
   }
 
@@ -1466,7 +1474,7 @@ class Track {
    */
   isOnRoad(position) {
     const { distance } = this.getClosestPoint(position);
-    return distance <= TRACK_CONFIG.roadWidth;
+    return distance <= this.cfg.roadWidth;
   }
 
   /**
@@ -1497,7 +1505,7 @@ class Track {
 
     // 简单距离检测
     const dist = position.distanceTo(cp.position);
-    if (dist < TRACK_CONFIG.roadWidth * 2) {
+    if (dist < this.cfg.roadWidth * 2) {
       return nextIndex;
     }
     return -1;
@@ -1575,7 +1583,7 @@ class Track {
         const spawn = this.getSpawnPosition(distBack, latOffset);
         // 若超出路面，向中心线修正
         if (!spawn.onRoad) {
-          const clamped = THREE.MathUtils.clamp(latOffset, -TRACK_CONFIG.roadWidth + 1, TRACK_CONFIG.roadWidth - 1);
+          const clamped = THREE.MathUtils.clamp(latOffset, -this.cfg.roadWidth + 1, this.cfg.roadWidth - 1);
           const corrected = this.getSpawnPosition(distBack, clamped);
           positions.push(corrected);
         } else {
