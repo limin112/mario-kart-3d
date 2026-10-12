@@ -9,21 +9,29 @@ MODEL_QWEN='strata/qwen-flash'
 MODEL_PRIMARY='openrouter-free/nvidia/nemotron-3-ultra-550b-a55b:free'
 MODEL_FALLBACK='openrouter-free/nvidia/nemotron-3-super-120b-a12b:free'
 
-# Qwen 健康检查：经 strata 中继问 worker3 的 /v1/models，200 即视为可用。
+# Qwen 健康检查：2026-10-12 起升级为 chat 真探针（babysit 21:20 指令，Pi 未落实，
+# taskmaster 22:27 代落实）。教训：/v1/models 只走中继不经过模型生成，永远 200，
+# 而 chat 生成曾静默挂死 1 小时（20:10→21:10 +08，18 轮 Connection error 空转）。
+# 探针：max_tokens=4 的非流式 chat，超时 20s；连续两次失败才算 down，然后降级 OpenRouter。
 # 注意：relay.py 是透明透传，中继本身不加鉴权，worker3 要求 Bearer key；
 # 裸 curl 只会拿到 401，所以这里必须带上 models.json 里的 strata key（现取现用，不落盘）。
 # （用户本地机器睡觉/离线时这里不通，直接跳过，避免 pi 空转 25 分钟。）
 qwen_up() {
-  # 中继偶发抖动，重试 3 次（间隔 3s）再判 down
   local i r
-  for i in 1 2 3; do
+  for i in 1 2; do
     r="$(python3 -c "
 import json, os, urllib.request
 try:
     key = json.load(open(os.path.expanduser('~/.pi/agent/models.json')))['providers']['strata']['apiKey']
-    req = urllib.request.Request('http://127.0.0.1:18182/v1/models',
-                                 headers={'Authorization': 'Bearer ' + key})
-    print(urllib.request.urlopen(req, timeout=25).status)
+    body = json.dumps({'model': 'qwen3.8-flash-next-ud-iq4-xs-128k',
+                       'messages': [{'role': 'user', 'content': 'ping'}],
+                       'max_tokens': 4, 'stream': False}).encode()
+    req = urllib.request.Request('http://127.0.0.1:18182/v1/chat/completions', data=body,
+                                 headers={'Authorization': 'Bearer ' + key,
+                                          'Content-Type': 'application/json'})
+    resp = urllib.request.urlopen(req, timeout=20)
+    d = json.load(resp)
+    print(200 if (resp.status == 200 and d.get('choices')) else 0)
 except Exception:
     print(0)
 ")"
@@ -67,6 +75,23 @@ if qwen_up; then
   run_pi "$MODEL_QWEN"
   RC=$?
   echo "[loop] $(date '+%F %T') pi exit=$RC (qwen)" >> "$PROJ/scripts/loop-runs.log"
+  # 熔断（babysit 21:20 指令，taskmaster 22:27 代落实）：Qwen 轮连续失败 10 次 → 休眠 30 分钟，
+  # 避免空转刷屏（如 22:27 查到的 `Connection error.` 连跪 13 轮 / 大 prompt 下 `malformed server-sent event JSON`）。
+  # worker3 是用户自己的部署，只如实记录，绝不动它。
+  CB_STATE="$PROJ/scripts/circuit-breaker.state"
+  if [ $RC -ne 0 ]; then
+    N=$(( $(cat "$CB_STATE" 2>/dev/null || echo 0) + 1 ))
+    echo "$N" > "$CB_STATE"
+    echo "[loop] $(date '+%F %T') circuit-breaker: qwen round failed x$N" >> "$PROJ/scripts/loop-runs.log"
+    if [ "$N" -ge 10 ]; then
+      echo "[loop] $(date '+%F %T') 熔断触发：Qwen 轮连续失败 10 次，休眠 30 分钟" >> "$PROJ/scripts/loop-runs.log"
+      : > "$CB_STATE"
+      sleep 1800
+      exit 0
+    fi
+  else
+    : > "$CB_STATE"
+  fi
   exit $RC
 fi
 echo "[loop] $(date '+%F %T') qwen down, falling back to openrouter" >> "$PROJ/scripts/loop-runs.log"
