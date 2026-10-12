@@ -510,6 +510,7 @@ export class AIManager {
       const ai = new AIKart(scene, track, colors[i], i, playerKartPhysics);
       this.aiKarts.push(ai);
     }
+    if (typeof window !== 'undefined') window.__ai = this; // DEBUG: 探针读 AI 数据用（同 main.js window.track 先例）
   }
   
   update(dt) {
