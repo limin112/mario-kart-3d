@@ -1,4 +1,5 @@
 # LOG — 迭代日志（Pi 每轮追加一行，格式：时间：做了什么 - 验证结果）
+- 2026-10-14 04:55 +08 P19e 捷径闭环：trackdefs.js classic 增 shortcuts[0]（halfWidth=6/hazardPos），track.js 捷径 mesh（polygonOffset）/检查点（bypass 1→3）/常驻香蕉；shortcut-probe 20 项全 PASS（俯视沥青 21% 真实渲染），verify.js ok:true 零 error、drive 10 km/h；M1 收官。
 - 2026-10-11 16:00 +08 最终确认：P11 发车位置修复已生效，verify.js ok:true 零 console/page error，node --check 全通过，驾驶 10 km/h；P1-P11 全阶段完整交付，项目完结。
 - 2026-10-11 15:55 最终回归验收：verify.js ok:true，零 console/page error，node --check 全通过，驾驶 10 km/h；P1-P11 全阶段完整交付，项目完结。
 
