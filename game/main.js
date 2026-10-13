@@ -3,7 +3,7 @@ import { Track } from './track.js';
 import { AIManager } from './ai.js';
 import { PlayerItemManager, AIItemManager } from './items.js';
 import { ParticleSystem } from './particles.js';
-import { createKart, createShowcaseKart, updateShowcaseKart, resetKartForRace } from './kart.js';
+import { createKart, resetKartForRace } from './kart.js';
 import { AudioManager } from './audio.js';
 import { startSplash } from './splash.js';
 import { showRoundBanner } from './rounds.js';
@@ -26,15 +26,9 @@ const state = {
   lastCheckpointIndex: -1,
   passedStartLine: false,
   totalTime: 0,
-  // P7: 展示模式
-  showcaseMode: true,
-  showcaseProgress: 0, // 0~1 爆炸动画进度
-  showcaseStartTime: 0,
-  showcaseKart: null,
-  showcaseCameraAngle: 0,
-  showcasePhase: 'intro', // 'intro' | 'explode' | 'exit'
-  showcasePhaseStartTime: 0,
-  showcaseTransitionProgress: 0,
+  // P24: 发车格巡游开场（替代旧 P7 零件爆炸展示）
+  paradeMode: true,       // splash 播完到镜头落位车尾之间为 true
+  paradeStartTime: 0,
 };
 
 // 全局游戏时间（基于 rAF 时间戳，秒），避免 performance.now() 在 headless 下不同步
@@ -56,9 +50,6 @@ const TRACK_NAME = URL_PARAMS.get('track') || 'classic';
 const THEME_NAME = URL_PARAMS.get('theme') || (TRACK_LAYOUTS[TRACK_NAME] && TRACK_LAYOUTS[TRACK_NAME].theme) || 'classic';
 const raceTheme = getTheme(THEME_NAME);
 scene.background = new THREE.Color(raceTheme.sceneBg ?? 0x87ceeb); // 天空蓝（比赛模式）
-
-const showcaseScene = new THREE.Scene();
-showcaseScene.background = new THREE.Color(0x0a0a12); // 深色舞台背景
 
 // 相机
 const camera = new THREE.PerspectiveCamera(60, window.innerWidth / window.innerHeight, 0.1, 1000);
@@ -118,98 +109,6 @@ const playerKart = createKart(0x33ff33);
 playerKart.position.set(0, 0, 5);
 scene.add(playerKart);
 
-// ============ P7: 展示模式场景搭建 ============
-function setupShowcaseScene() {
-  // 蓝图风格网格地面
-  const gridSize = 40;
-  const gridDivisions = 40;
-  const gridHelper = new THREE.GridHelper(gridSize, gridDivisions, 0x00ffff, 0x004466);
-  gridHelper.position.y = 0;
-  showcaseScene.add(gridHelper);
-
-  // 次级细网格
-  const fineGrid = new THREE.GridHelper(gridSize, gridDivisions * 2, 0x002244, 0x001133);
-  fineGrid.position.y = 0.01;
-  showcaseScene.add(fineGrid);
-
-  // 舞台灯光：暗蓝色环境光
-  const showcaseAmbient = new THREE.AmbientLight(0x112244, 0.8);
-  showcaseScene.add(showcaseAmbient);
-
-  // 主光源：从左上方打亮
-  const showcaseKeyLight = new THREE.DirectionalLight(0x88ccff, 1.5);
-  showcaseKeyLight.position.set(-20, 30, 20);
-  showcaseKeyLight.castShadow = true;
-  showcaseKeyLight.shadow.mapSize.width = 2048;
-  showcaseKeyLight.shadow.mapSize.height = 2048;
-  showcaseKeyLight.shadow.camera.near = 1;
-  showcaseKeyLight.shadow.camera.far = 100;
-  showcaseKeyLight.shadow.camera.left = -25;
-  showcaseKeyLight.shadow.camera.right = 25;
-  showcaseKeyLight.shadow.camera.top = 25;
-  showcaseKeyLight.shadow.camera.bottom = -25;
-  showcaseScene.add(showcaseKeyLight);
-
-  // 补光：对侧柔光
-  const showcaseFillLight = new THREE.DirectionalLight(0xff8844, 0.5);
-  showcaseFillLight.position.set(20, 15, -20);
-  showcaseScene.add(showcaseFillLight);
-
-  // 顶光：边缘勾勒
-  const showcaseRimLight = new THREE.DirectionalLight(0xffffff, 0.3);
-  showcaseRimLight.position.set(0, 40, 0);
-  showcaseScene.add(showcaseRimLight);
-
-  // 点光源装饰：舞台四角微弱发光球
-  for (const [x, z] of [[-15, -15], [15, -15], [-15, 15], [15, 15]]) {
-    const glowGeo = new THREE.SphereGeometry(0.5, 16, 16);
-    const glowMat = new THREE.MeshBasicMaterial({ color: 0x00ffff, transparent: true, opacity: 0.3 });
-    const glow = new THREE.Mesh(glowGeo, glowMat);
-    glow.position.set(x, 2, z);
-    showcaseScene.add(glow);
-    glow.userData = { baseY: 2, phase: Math.random() * Math.PI * 2 };
-  }
-
-  // 车辆标题文本（用 Sprite 实现）
-  const titleCanvas = document.createElement('canvas');
-  titleCanvas.width = 512;
-  titleCanvas.height = 128;
-  const ctx = titleCanvas.getContext('2d');
-  ctx.fillStyle = 'rgba(0, 20, 40, 0.6)';
-  ctx.fillRect(0, 0, 512, 128);
-  ctx.font = 'bold 64px "Courier New", monospace';
-  ctx.textAlign = 'center';
-  ctx.fillStyle = '#00ffff';
-  ctx.shadowColor = '#00ffff';
-  ctx.shadowBlur = 20;
-  ctx.fillText('KART RACER', 256, 70);
-  ctx.font = '24px "Courier New", monospace';
-  ctx.fillStyle = '#88ccff';
-  ctx.shadowBlur = 10;
-  ctx.fillText('PRESS ANY KEY TO START', 256, 105);
-  const titleTexture = new THREE.CanvasTexture(titleCanvas);
-  const titleMat = new THREE.SpriteMaterial({ map: titleTexture, transparent: true, depthTest: false });
-  const titleSprite = new THREE.Sprite(titleMat);
-  titleSprite.position.set(0, 6, 0);
-  titleSprite.scale.set(16, 4, 1);
-  titleSprite.renderOrder = 999;
-  titleSprite.material.opacity = 0; // 初始隐藏，淡入
-  titleSprite.userData = { targetY: 6, targetScale: 16 };
-  showcaseScene.add(titleSprite);
-  state.showcaseTitle = titleSprite;
-
-  // 创建展示用卡丁车（爆炸视图）
-  const showcaseKart = createShowcaseKart(0xff3333);
-  showcaseKart.position.set(0, 0.5, 0);
-  showcaseScene.add(showcaseKart);
-  state.showcaseKart = showcaseKart;
-  state.showcaseStartTime = 0;
-  state.showcasePhaseStartTime = 0;
-  state.showcasePhase = 'intro';
-}
-
-setupShowcaseScene();
-
 // ============ 赛道系统 (P2) ============
 const track = new Track(scene, THEME_NAME, TRACK_NAME);
 window.track = track; // DEBUG
@@ -224,12 +123,10 @@ Object.assign(window.__mk, { particleSystem, playerKart }); // DEBUG: 探针遍�
 const keys = { forward: false, backward: false, left: false, right: false };
 
 window.addEventListener('keydown', (e) => {
-  // P7: 展示模式下任意键进入比赛；P16: 开屏 splash 期间吞掉按键（交给 splash 自己的监听器）
-  if (state.showcaseMode && !showcaseDone) {
-    if (splashFinished) {
-      state.showcasePhase = 'exit';
-      state.showcasePhaseStartTime = performance.now() / 1000;
-    }
+  // P24: 巡游开场期间任意键跳过（直接落位车尾进倒计时）；
+  // P16: 开屏 splash 期间吞掉按键（交给 splash 自己的监听器）
+  if (state.paradeMode && !paradeDone) {
+    if (splashFinished) skipParade();
     return;
   }
   switch (e.code) {
@@ -252,11 +149,10 @@ window.addEventListener('keyup', (e) => {
   }
 });
 
-// 点击也可跳过展示模式
+// 点击也可跳过巡游开场
 window.addEventListener('click', () => {
-  if (state.showcaseMode && !showcaseDone && splashFinished) {
-    state.showcasePhase = 'exit';
-    state.showcasePhaseStartTime = performance.now() / 1000;
+  if (state.paradeMode && !paradeDone && splashFinished) {
+    skipParade();
   }
 });
 
