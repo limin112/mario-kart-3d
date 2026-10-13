@@ -7,12 +7,26 @@
  * 输出 JSON 到 stdout；consoleErrors 非空即失败。
  */
 const { chromium } = require('playwright-core');
+const fs = require('node:fs');
 
 (async () => {
   const [url, shot1, driveFlag, shot2] = process.argv.slice(2);
   const report = { url, consoleErrors: [], pageErrors: [], shots: [], hud: {} };
-  const browser = await chromium.launch();
+  const browser = await chromium.launch({ args: ['--no-sandbox', '--disable-dev-shm-usage'] });
   const page = await browser.newPage({ viewport: { width: 1280, height: 800 } });
+  // 环境兜底（GUIDANCE 2026-10-10 17:25②）：本机 8G + 纯软渲染下 page.screenshot
+  // 偶发 60s 超时（验证工具/环境问题，非游戏 bug）→ 退回 CDP Page.captureScreenshot 直抓。
+  // 只改截图通道，不动任何 error 采集与 ok 判定。
+  const shoot = async (path) => {
+    try {
+      await page.screenshot({ path, timeout: 60000, animations: 'disabled' });
+    } catch (e) {
+      const cdp = await page.context().newCDPSession(page);
+      const cap = await cdp.send('Page.captureScreenshot', { format: 'png' });
+      fs.writeFileSync(path, Buffer.from(cap.data, 'base64'));
+      report.screenshotFallback = (report.screenshotFallback || 0) + 1;
+    }
+  };
   page.on('console', (msg) => {
     if (msg.type() === 'error') report.consoleErrors.push(msg.text().slice(0, 300));
   });
@@ -29,7 +43,7 @@ const { chromium } = require('playwright-core');
     time: document.getElementById('time')?.textContent ?? null,
   })).catch(() => ({}));
   report.hud.before = hud;
-  await page.screenshot({ path: shot1, timeout: 60000, animations: 'disabled' });
+  await shoot(shot1);
   report.shots.push(shot1);
   if (driveFlag === '--drive' && shot2) {
     await page.keyboard.down('ArrowUp');
@@ -39,7 +53,7 @@ const { chromium } = require('playwright-core');
       speed: document.getElementById('speed')?.textContent ?? null,
     })).catch(() => ({}));
     report.hud.after = hud2;
-    await page.screenshot({ path: shot2, timeout: 60000, animations: 'disabled' });
+    await shoot(shot2);
     report.shots.push(shot2);
   }
   await browser.close();
