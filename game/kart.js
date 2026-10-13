@@ -208,7 +208,18 @@ export function createKart(color = 0xff3333, isPlayer = true) {
     }
   }
 
-  group.userData = { wheels, parts, driverGroup, isPlayer };
+  // P24 前置（车头朝向统一）：逻辑层约定"车头 = 局部 -Z"（前进方向 =
+  // (-sin r, 0, -cos r)，见 main.js updatePhysics / ai.js / items.js / projectiles.js），
+  // 而本模型零件按"车头 = 局部 +Z"搭建（nose z=+1.4、尾翼 z=-1.6）。
+  // 用一层 flip 容器把整套零件绕 Y 转 180°，车看起来就是往它真正在开的方向跑；
+  // parts / wheels 引用不变（仅换父级），世界坐标由 group.rotation.y 决定，不受影响。
+  const facing = new THREE.Group();
+  facing.name = 'facingFix';
+  facing.rotation.y = Math.PI;
+  for (const child of [...group.children]) facing.add(child);
+  group.add(facing);
+
+  group.userData = { wheels, parts, driverGroup, isPlayer, nose: parts.nose };
   return group;
 }
 

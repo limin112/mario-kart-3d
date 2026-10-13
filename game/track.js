@@ -1892,7 +1892,12 @@ class Track {
     
     const position = info.position.clone().addScaledVector(info.normal, lateralOffset);
     position.y = info.position.y + 0.5; // P19c：出生点跟路面高程
-    const rotation = Math.atan2(info.tangent.x, info.tangent.z);
+    // P24前置修复（P11 遗留方向 bug）：物理/模型统一约定"车头 = 局部 -Z"，
+    // 即 heading r 的前进方向 = (-sin r, 0, -cos r)（与 projectiles.js 一致）。
+    // 出生点要朝赛道行进方向（+tangent，t 增加方向，检查点 0→7 依次排列），
+    // 故 r = atan2(-tx, -tz)。旧式 atan2(tx,tz) 让车头对着起点线、整车倒着开，
+    // 检查点永远凑不齐、圈永远跑不完（2026-10-14 实测 t 单调递减确认）。
+    const rotation = Math.atan2(-info.tangent.x, -info.tangent.z);
     
     // 验证是否在路面内（到中心线距离 < 路面半宽 - 1 米安全边距）
     const onRoad = this.isOnRoad(position);

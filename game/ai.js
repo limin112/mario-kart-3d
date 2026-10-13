@@ -161,6 +161,14 @@ function createAIKart(color, index) {
     wheels.push({ group: wheelGroup, tire, rim });
   }
 
+  // P24 前置（车头朝向统一）：同 kart.js createKart —— 逻辑前进方向 = 局部 -Z，
+  // 模型零件按 +Z 搭建，用 flip 容器转 180°，AI 车也不再视觉倒着开。
+  const facing = new THREE.Group();
+  facing.name = 'facingFix';
+  facing.rotation.y = Math.PI;
+  for (const child of [...group.children]) facing.add(child);
+  group.add(facing);
+
   group.userData = { wheels, driverGroup, chassis, nose, mid, rear, wing };
   return group;
 }
@@ -236,7 +244,9 @@ class AIKart {
     // 计算朝向目标的方向
     const toTarget = targetPos.clone().sub(this.position);
     toTarget.y = 0;
-    const targetAngle = Math.atan2(toTarget.x, toTarget.z);
+    // P24前置修复：前进方向 = (-sin r, 0, -cos r)，朝目标 (dx,dz) 的 heading
+    // 应为 atan2(-dx, -dz)。旧式 atan2(dx,dz) 让 AI 背离前瞻点倒着跑（实测 t 递减）。
+    const targetAngle = Math.atan2(-toTarget.x, -toTarget.z);
     
     // 角度差（归一化到 -PI 到 PI）
     let angleDiff = targetAngle - this.rotation;
