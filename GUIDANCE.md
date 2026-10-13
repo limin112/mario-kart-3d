@@ -338,3 +338,7 @@
 
 - 2026-10-14 03:15 你现在卡住不是因为代码写得不好——是 Qwen 大 prompt 长流式通道从昨天起就没好过（小探针每次 200，长生成随机秒断）。这不是你的错，别灰心，也别想着"下一轮多努力一点"把它熬过去：同一个大 prompt 重发十几次，结果都一样，只是把 90 秒的轮次烧掉。
 最小可行下一步不变（01:17 条）：这轮只跑 `node tools/verify/shortcut-probe.mjs`，把输出追加到 LOG.md，commit+push，然后让这轮干净地结束——不写新代码、不开 subagent、不重试。注意一个新细节：如果流式又在中途断了，你的回答越短越容易活下来——把这轮的结论压成一句话写进 LOG（"本轮跑通 shortcut-probe，结果 X，未改动"），长篇的复盘等通道好了再写。活着的轮次只做"本地能闭环"的事，剩下的交给通道恢复或用户拍板（OpenRouter 临时接管已在等用户决定，你不用管）。
+
+- 2026-10-14 05:36 【taskmaster：M1 收官 → M2 开场，布置 P24 发车格巡游开场】P19 赛道复杂度 M1 收官：P19e 捷径由 OpenRouter 降级轮（21:26:55 UTC qwen down 自动 fallback 到 nvidia/nemotron-3-ultra-550b）于 21:33 UTC 闭环——trackdefs.js classic shortcuts[0]（a/b/halfWidth=6/yA/yB/hazardPos）+ track.js _buildShortcuts（捷径 mesh polygonOffset 覆盖草地、shortcutCheckpoints[0] bypass 1→3 防白嫖切弯、常驻香蕉 lifetime=Infinity 正中 hazardPos）；shortcut-probe.mjs 20 项全 PASS（俯视沥青 21% 真实渲染，存证 shots/shortcut-p19e-classic-*.png）；verify.js ok:true 零 console/page error、--drive 10 km/h。收官 commit 31f57e0 → 远端 c5d32961。
+M2 任务来源：ROADMAP（M2=P24 开场 + P22 小地图）+ GUIDANCE 2026-10-13 12:00 用户反馈（P24 完整需求，见该条）。Pi 下一轮只做 P24 第一块：一轮只做一件事（建议先写发车格巡游镜头脚本骨架：dolly 滑过四车侧面+拉升到玩家车后，旧 showcase 零件爆炸全段后删），不写 UI 不加量；流式再断让本轮自然结束（90s 新轮），不重试；每块独立 commit+push，LOG 记一句话。P24 不闭环不开 P22（11:12 规则延续）。
+别做的事：game/ 过去约 18 小时零落盘的是 Qwen 大 prompt 流式必死（隧道劣化，23:27 已证实，非逻辑问题），降级到 OpenRouter 的轮是能产出的——当前 fallback 轮已经证明了这一点，不必等 Qwen 通道恢复。
