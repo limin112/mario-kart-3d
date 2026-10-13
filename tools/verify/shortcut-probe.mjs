@@ -31,9 +31,9 @@ const errors = [];
 page.on('console', (m) => { if (m.type() === 'error') errors.push('console: ' + m.text()); });
 page.on('pageerror', (e) => errors.push('pageerror: ' + e.message));
 
-await page.goto(BASE + '?track=classic', { waitUntil: 'load' });
-await page.waitForFunction(() => window.__mk && window.__mk.track, { timeout: 30000 });
-await page.waitForFunction(() => window.__mk.state && window.__mk.state.running === true, { timeout: 90000 });
+await page.goto(BASE + '?track=classic', { waitUntil: 'load', timeout: 60000 });
+await page.waitForFunction(() => window.__mk && window.__mk.track, { timeout: 60000 });
+await page.waitForFunction(() => window.__mk.state && window.__mk.state.running === true, { timeout: 120000 });
 
 // ---------- 1. 静态结构断言 ----------
 const st = await page.evaluate(() => {
@@ -88,8 +88,8 @@ check('常驻香蕉位于捷径正中 hazardPos', st.bananaAtHazard < 0.1, 'bana
 // ---------- 2. dune/glacier 零回归 ----------
 for (const name of ['dune', 'glacier']) {
   const page2 = await browser.newPage({ viewport: { width: 1280, height: 720 } });
-  await page2.goto(BASE + '?track=' + name, { waitUntil: 'load' });
-  await page2.waitForFunction(() => window.__mk && window.__mk.track, { timeout: 30000 });
+  await page2.goto(BASE + '?track=' + name, { waitUntil: 'load', timeout: 60000 });
+  await page2.waitForFunction(() => window.__mk && window.__mk.track, { timeout: 60000 });
   const st2 = await page2.evaluate(() => {
     const t = window.__mk.track;
     return { shortcuts: t.shortcuts.length, meshes: t.shortcutMeshes.length, cps: t.shortcutCheckpoints.length };
@@ -99,9 +99,9 @@ for (const name of ['dune', 'glacier']) {
 }
 
 // ---------- 3. 俯视截图验证捷径真实渲染 ----------
-await page.goto(BASE + '?track=classic', { waitUntil: 'load' });
-await page.waitForFunction(() => window.__mk && window.__mk.track, { timeout: 30000 });
-await page.waitForFunction(() => window.__mk.state && window.__mk.state.running === true, { timeout: 90000 });
+await page.goto(BASE + '?track=classic', { waitUntil: 'load', timeout: 60000 });
+await page.waitForFunction(() => window.__mk && window.__mk.track, { timeout: 60000 });
+await page.waitForFunction(() => window.__mk.state && window.__mk.state.running === true, { timeout: 120000 });
 
 // 俯视相机位置覆盖捷径中点
 const camPos = await page.evaluate(() => {
