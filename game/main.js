@@ -320,7 +320,7 @@ window.addEventListener('touchstart', unlockAudioOnce);
 aiItemManager = new AIItemManager(scene, track, aiManager.aiKarts, audio, particleSystem);
 playerItemManager = new PlayerItemManager(scene, track, kartPhysics, audio, aiItemManager, particleSystem);
 aiItemManager.setItemBoxes(playerItemManager.itemBoxes);
-Object.assign(window.__mk, { playerItemManager, kartPhysics, state }); // DEBUG: 探针读捷径常驻香蕉/传送计圈用（同 window.__ai 先例）
+Object.assign(window.__mk, { playerItemManager, aiItemManager, kartPhysics, state }); // DEBUG: 探针读捷径常驻香蕉/AI 共享碰撞/传送计圈用（同 window.__ai 先例）
 
 function updatePhysics(dt) {
   const p = kartPhysics;
