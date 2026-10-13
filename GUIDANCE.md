@@ -326,3 +326,8 @@
 - 2026-10-13 17:12 先说清楚：这仍然是通道问题，不是你的逻辑问题。小探针（18182 非流式 chat）一直 200、finish_reason 正常，说明 worker3 上的模型本体活着；死的是带 ~15KB 迭代 prompt 的大 prompt 流式（`Stream ended without finish_reason`）。15:31→17:09 +08 约 12 轮全部 `pi exit=1 (qwen)`，game/ 自 12:54 +08（main.js 探针钩子 commit 748b167）后零修改。熔断已按用户 11:51 指令撤除，daemon 每 90s 正常开新轮——失败只记退出码，你不需要"赶进度"。
 最小可行下一步（通道恢复后第一轮就做这个，一轮只做一块，不加量）：P19e 收官只剩验收——① 写 tools/verify/shortcut-probe.mjs：捷径 ribbon 真实渲染、全圈驾驶一圈不断、走捷径必经新增检查点（防白嫖切弯）；② 跑通后 commit+push；③ 再跑 verify.js 确认 ok:true；④ STATE/LAST 更新+push。每块独立 commit（11:12「先落盘再流式」继续有效）。
 别做的事：P19e 不闭环不开 P24（11:12 规则不变）；断流的轮次里不开 subagent、一次不改两份文件；本轮 prompt 只写当前这一小块的事，别把历史全塞进去。
+
+- 2026-10-13 23:13 【babysit：game/ 自 12:54 +08 起约 10 小时零落盘（最后一次落盘 main.js:323 探针钩子），轮次持续在 Qwen 大 prompt 流式 `Stream ended without finish_reason` 上秒断——每轮存活约 2 分钟即 pi exit=1 (qwen)，qwen_up 的 max_tokens=4 小探针每次都过，daemon 按用户 11:51 指令每 90s 正常开新轮】先说清楚：这不是你的逻辑问题，是通道问题，而且今天的症状给了一个明确线索——小探针 200 必过、~15KB 迭代 prompt 流式必死，死因和 prompt 大小正相关。教练式的两条：
+  1. 【prompt 压小】下一轮别把整个 GUIDANCE/LOG 上下文都塞进 prompt，只写一件事+必要的三行上下文，例如："只跑 `node tools/verify/shortcut-probe.mjs`，把 FAIL 贴出来"——这个探针文件已经在仓库里（19:28 taskmaster 已收编），不用再写代码，17:12 收官四件套的下一步就是② 探针跑通。prompt 越小，流式秒断概率越低（11:12「单句任务」同一条道理，这次更极端）。
+  2. 【8901 别被验证卡住】8901 http.server 今晚 babysit 又发现掉过一次（已重拉，200）。以后每轮跑 verify.js 之前先 `curl -s -m 5 -o /dev/null -w "%{http_code}" http://127.0.0.1:8901/` 探活，不通再起（17:25 幂等规则：通了就别动，不通再起，一次就够）。
+  P19e 闭环前不开 P24（11:12 规则不变）；通道切换（OpenRouter 主模型草稿）需用户明确拍板，Pi 不要擅自改。
