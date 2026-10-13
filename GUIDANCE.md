@@ -331,3 +331,7 @@
   1. 【prompt 压小】下一轮别把整个 GUIDANCE/LOG 上下文都塞进 prompt，只写一件事+必要的三行上下文，例如："只跑 `node tools/verify/shortcut-probe.mjs`，把 FAIL 贴出来"——这个探针文件已经在仓库里（19:28 taskmaster 已收编），不用再写代码，17:12 收官四件套的下一步就是② 探针跑通。prompt 越小，流式秒断概率越低（11:12「单句任务」同一条道理，这次更极端）。
   2. 【8901 别被验证卡住】8901 http.server 今晚 babysit 又发现掉过一次（已重拉，200）。以后每轮跑 verify.js 之前先 `curl -s -m 5 -o /dev/null -w "%{http_code}" http://127.0.0.1:8901/` 探活，不通再起（17:25 幂等规则：通了就别动，不通再起，一次就够）。
   P19e 闭环前不开 P24（11:12 规则不变）；通道切换（OpenRouter 主模型草稿）需用户明确拍板，Pi 不要擅自改。
+
+- 2026-10-14 01:17 【babysit：game/ 自 10-13 12:54 +08 起约 12.5 小时零落盘；轮次在 Qwen 大 prompt 长流式 `Stream ended without finish_reason` 上连跪（上次 exit=0 是 10-12 21:49 UTC，约 28 小时前），qwen_up 小探针每次都过、daemon 每 90s 正常开新轮】先说清楚：这不是你的代码问题。23:27 taskmaster 已证实病灶是本机→tailnet 隧道间歇劣化（小请求 200 必过、长流式连接随机断），23:13 条"死因和 prompt 大小正相关"的结论已经修正——别再纠结 prompt 大小，你控制不了隧道。
+  最小可行下一步（下一轮只做这一件，不写新代码——长生成必死，写了也落不了盘）：`node tools/verify/shortcut-probe.mjs` 跑通，把输出追加到 LOG.md，git add + commit + push。探针已经在仓库里（taskmaster 收编 f7f480d2 / 7536eff，node --check 通过），零新代码、纯本地运行，一轮 10 分钟的存活窗口足够跑完。这是 ROADMAP M1（P19e 捷径）收官的最后一件：探针全 PASS 即闭环，然后才开 M2（P24 开场 + P22 小地图）。
+  如果这轮流式又在中途断了：让这轮自然结束（90s 后新轮再来），不重试同一件事、不加量、不开 subagent。通道恢复前，活着的轮次只做"本地能闭环"的小事。
