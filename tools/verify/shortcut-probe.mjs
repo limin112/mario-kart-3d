@@ -18,8 +18,21 @@ const SHOTS = path.join(ROOT, 'shots');
 const results = [];
 let failures = 0;
 function check(name, ok, detail = '') {
-  results.push(`${ok ? 'PASS' : 'FAIL'} ${name}${detail ? ' | ' + detail : ''}`);
+  const line = `${ok ? 'PASS' : 'FAIL'} ${name}${detail ? ' | ' + detail : ''}`;
+  results.push(line);
+  console.log(line); // 增量输出：崩溃/超时也保留已完成的结论
   if (!ok) failures++;
+}
+
+// 本机 8G 内存 + 纯软渲染：两个 WebGL 游戏页并存会 OOM 杀渲染进程（P21 教训），
+// 全程复用同一页 goto；load 事件在软渲染下偶发不触发，改 domcontentloaded。
+async function gotoTrack(url) {
+  await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 120000 });
+  await page.waitForFunction(() => window.__mk && window.__mk.track, { timeout: 90000 });
+}
+async function gotoRace(url) {
+  await gotoTrack(url);
+  await page.waitForFunction(() => window.__mk.state && window.__mk.state.running === true, { timeout: 180000 });
 }
 
 // Helper to create position object compatible with track methods
@@ -31,9 +44,7 @@ const errors = [];
 page.on('console', (m) => { if (m.type() === 'error') errors.push('console: ' + m.text()); });
 page.on('pageerror', (e) => errors.push('pageerror: ' + e.message));
 
-await page.goto(BASE + '?track=classic', { waitUntil: 'load', timeout: 60000 });
-await page.waitForFunction(() => window.__mk && window.__mk.track, { timeout: 60000 });
-await page.waitForFunction(() => window.__mk.state && window.__mk.state.running === true, { timeout: 120000 });
+await gotoRace(BASE + '?track=classic');
 
 // ---------- 1. 静态结构断言 ----------
 const st = await page.evaluate(() => {
@@ -87,21 +98,16 @@ check('常驻香蕉位于捷径正中 hazardPos', st.bananaAtHazard < 0.1, 'bana
 
 // ---------- 2. dune/glacier 零回归 ----------
 for (const name of ['dune', 'glacier']) {
-  const page2 = await browser.newPage({ viewport: { width: 1280, height: 720 } });
-  await page2.goto(BASE + '?track=' + name, { waitUntil: 'load', timeout: 60000 });
-  await page2.waitForFunction(() => window.__mk && window.__mk.track, { timeout: 60000 });
-  const st2 = await page2.evaluate(() => {
+  await gotoTrack(BASE + '?track=' + name);
+  const st2 = await page.evaluate(() => {
     const t = window.__mk.track;
     return { shortcuts: t.shortcuts.length, meshes: t.shortcutMeshes.length, cps: t.shortcutCheckpoints.length };
   });
   check(`${name} 无 shortcuts 数据 → 零放置`, st2.shortcuts === 0 && st2.meshes === 0 && st2.cps === 0, JSON.stringify(st2));
-  await page2.close();
 }
 
 // ---------- 3. 俯视截图验证捷径真实渲染 ----------
-await page.goto(BASE + '?track=classic', { waitUntil: 'load', timeout: 60000 });
-await page.waitForFunction(() => window.__mk && window.__mk.track, { timeout: 60000 });
-await page.waitForFunction(() => window.__mk.state && window.__mk.state.running === true, { timeout: 120000 });
+await gotoRace(BASE + '?track=classic');
 
 // 俯视相机位置覆盖捷径中点
 const camPos = await page.evaluate(() => {
@@ -110,49 +116,57 @@ const camPos = await page.evaluate(() => {
   const mid = { x: (sc.a.x + sc.b.x) / 2, y: (sc.yA + sc.yB) / 2, z: (sc.a.z + sc.b.z) / 2 };
   return mid;
 });
-// 设置相机俯视
-await page.evaluate((p) => {
+// 俯视机位必须在同一帧内「设机位→渲染→读像素」：主循环每帧会把相机拉回跟随机位，
+// 分开两次 evaluate 设机位会被覆盖（首轮实测 asphalt=37/38400 即此因）。
+// 存证图也从 readPixels 直接编码（合成器截图拍到的是跟随机位，非俯视）。
+const shot = await page.evaluate((p) => new Promise((resolve) => {
+  const renderer = window.__mk.renderer;
+  const scene = window.__mk.scene;
   const cam = window.__mk.camera;
-  cam.position.set(p.x, 80, p.z);
-  cam.lookAt(p.x, 0, p.z);
-  cam.updateProjectionMatrix();
-}, camPos);
-await page.waitForTimeout(500); // 等一帧渲染
+  requestAnimationFrame(() => {
+    cam.position.set(p.x, 70, p.z);
+    cam.up.set(0, 1, 0);
+    cam.lookAt(p.x, 0, p.z);
+    cam.updateProjectionMatrix();
+    renderer.render(scene, cam);
+    const gl = renderer.getContext();
+    const w = gl.drawingBufferWidth, h = gl.drawingBufferHeight;
+    const px = new Uint8Array(w * h * 4);
+    gl.readPixels(0, 0, w, h, gl.RGBA, gl.UNSIGNED_BYTE, px);
+    // 中心 20%×20%：捷径路面（沥青灰）应显著多于草地绿
+    const x0 = Math.floor(w * 0.4), ww = Math.floor(w * 0.2);
+    const y0 = Math.floor(h * 0.4), hh = Math.floor(h * 0.2);
+    let asphalt = 0, grass = 0, other = 0;
+    for (let y = y0; y < y0 + hh; y++) {
+      for (let x = x0; x < x0 + ww; x++) {
+        const i = (y * w + x) * 4;
+        const r = px[i], g = px[i + 1], b = px[i + 2];
+        if (g > r + 25 && g > b + 25) grass++;
+        else if (Math.abs(r - g) < 25 && Math.abs(g - b) < 25 && r > 30 && r < 170) asphalt++;
+        else other++;
+      }
+    }
+    const c = document.createElement('canvas');
+    c.width = w; c.height = h;
+    const ctx = c.getContext('2d');
+    const img = ctx.createImageData(w, h);
+    for (let y = 0; y < h; y++) {
+      const src = (h - 1 - y) * w * 4; // readPixels 原点在左下，翻成图像坐标
+      img.data.set(px.subarray(src, src + w * 4), y * w * 4);
+    }
+    ctx.putImageData(img, 0, 0);
+    resolve({ dataUrl: c.toDataURL('image/png'), asphalt, grass, other, total: ww * hh, w, h });
+  });
+}), camPos);
 
 const shotPath = path.join(SHOTS, `shortcut-p19e-classic-${Date.now()}.png`);
-await page.screenshot({ path: shotPath, timeout: 60000 });
+fs.writeFileSync(shotPath, Buffer.from(shot.dataUrl.split(',')[1], 'base64'));
 
-// 像素分析：捷径区域应有灰色沥青像素（区别于草地绿） - 在浏览器上下文中做
-const analysis = await page.evaluate(() => {
-  const renderer = window.__mk.renderer;
-  const cam = window.__mk.camera;
-  // 读取渲染结果的像素（需要先渲染一帧）
-  renderer.render(window.__mk.scene, cam);
-  const gl = renderer.getContext();
-  const width = gl.drawingBufferWidth;
-  const height = gl.drawingBufferHeight;
-  const pixels = new Uint8Array(width * height * 4);
-  gl.readPixels(0, 0, width, height, gl.RGBA, gl.UNSIGNED_BYTE, pixels);
-  // 取图像中心区域（捷径大致在画面中央）
-  const x0 = Math.floor(width * 0.4), w = Math.floor(width * 0.2);
-  const y0 = Math.floor(height * 0.4), h = Math.floor(height * 0.2);
-  let asphalt = 0, grass = 0, other = 0;
-  for (let y = y0; y < y0 + h; y++) {
-    for (let x = x0; x < x0 + w; x++) {
-      const i = (y * width + x) * 4;
-      const r = pixels[i], g_ = pixels[i+1], b = pixels[i+2];
-      // 沥青灰：RGB 接近，值在 50-130
-      if (Math.abs(r - g_) < 25 && Math.abs(g_ - b) < 25 && r > 40 && r < 140) asphalt++;
-      // 草地绿：G 显著大于 R,B
-      else if (g_ > r + 25 && g_ > b + 25) grass++;
-      else other++;
-    }
-  }
-  return { asphalt, grass, other, total: w * h };
-});
-
-check('俯视截图捷径区域有沥青像素（非纯草地）', analysis.asphalt > analysis.grass * 0.5, `asphalt=${analysis.asphalt} grass=${analysis.grass} other=${analysis.other}`);
-check('截图保存', fs.existsSync(shotPath), shotPath);
+const frac = shot.asphalt / shot.total;
+check('俯视捷径区域真实画出沥青路面（非纯草地）',
+  frac > 0.15 && shot.asphalt > shot.grass,
+  `asphalt=${shot.asphalt}(${(frac * 100).toFixed(1)}%) grass=${shot.grass} other=${shot.other} total=${shot.total} view=${shot.w}x${shot.h}`);
+check('存证截图已保存', fs.existsSync(shotPath), shotPath);
 
 await browser.close();
 console.log(results.join('\n'));
