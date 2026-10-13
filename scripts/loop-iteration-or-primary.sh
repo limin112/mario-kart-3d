@@ -57,9 +57,9 @@ except Exception:
   return 1
 }
 
-# Qwen 兜底分支的熔断：连续失败 10 次 → 休眠 30 分钟（沿用 circuit-breaker.state）。
+# Qwen 兜底分支（2026-10-13 用户明确要求撤掉熔断机制：不再计数、不再休眠，失败只记录）。
 qwen_fallback() {
-  local RC N CB_STATE
+  local RC
   echo "[loop] $(date '+%F %T') openrouter unavailable, falling back to qwen (last resort)" >> "$PROJ/scripts/loop-runs.log"
   if ! qwen_up; then
     echo "[loop] $(date '+%F %T') qwen also down, sleeping 600s" >> "$PROJ/scripts/loop-runs.log"
@@ -70,19 +70,6 @@ qwen_fallback() {
   run_pi "$MODEL_QWEN"
   RC=$?
   echo "[loop] $(date '+%F %T') pi exit=$RC (qwen fallback)" >> "$PROJ/scripts/loop-runs.log"
-  CB_STATE="$PROJ/scripts/circuit-breaker.state"
-  if [ $RC -ne 0 ]; then
-    N=$(( $(cat "$CB_STATE" 2>/dev/null || echo 0) + 1 ))
-    echo "$N" > "$CB_STATE"
-    echo "[loop] $(date '+%F %T') circuit-breaker: qwen fallback failed x$N" >> "$PROJ/scripts/loop-runs.log"
-    if [ "$N" -ge 10 ]; then
-      echo "[loop] $(date '+%F %T') 熔断触发：Qwen 兜底连续失败 10 次，休眠 30 分钟" >> "$PROJ/scripts/loop-runs.log"
-      : > "$CB_STATE"
-      sleep 1800
-    fi
-  else
-    : > "$CB_STATE"
-  fi
   return $RC
 }
 

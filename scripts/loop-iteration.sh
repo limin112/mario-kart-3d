@@ -75,23 +75,9 @@ if qwen_up; then
   run_pi "$MODEL_QWEN"
   RC=$?
   echo "[loop] $(date '+%F %T') pi exit=$RC (qwen)" >> "$PROJ/scripts/loop-runs.log"
-  # 熔断（babysit 21:20 指令，taskmaster 22:27 代落实）：Qwen 轮连续失败 10 次 → 休眠 30 分钟，
-  # 避免空转刷屏（如 22:27 查到的 `Connection error.` 连跪 13 轮 / 大 prompt 下 `malformed server-sent event JSON`）。
+  # 注：2026-10-13 用户明确要求撤掉熔断机制（连续失败10次休眠30分钟）。
+  # 失败轮只记录退出码，daemon 按正常 90s 间隔开新轮，不再休眠。
   # worker3 是用户自己的部署，只如实记录，绝不动它。
-  CB_STATE="$PROJ/scripts/circuit-breaker.state"
-  if [ $RC -ne 0 ]; then
-    N=$(( $(cat "$CB_STATE" 2>/dev/null || echo 0) + 1 ))
-    echo "$N" > "$CB_STATE"
-    echo "[loop] $(date '+%F %T') circuit-breaker: qwen round failed x$N" >> "$PROJ/scripts/loop-runs.log"
-    if [ "$N" -ge 10 ]; then
-      echo "[loop] $(date '+%F %T') 熔断触发：Qwen 轮连续失败 10 次，休眠 30 分钟" >> "$PROJ/scripts/loop-runs.log"
-      : > "$CB_STATE"
-      sleep 1800
-      exit 0
-    fi
-  else
-    : > "$CB_STATE"
-  fi
   exit $RC
 fi
 echo "[loop] $(date '+%F %T') qwen down, falling back to openrouter" >> "$PROJ/scripts/loop-runs.log"
