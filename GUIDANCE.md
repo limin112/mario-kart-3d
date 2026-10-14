@@ -353,3 +353,5 @@ M2 任务来源：ROADMAP（M2=P24 开场 + P22 小地图）+ GUIDANCE 2026-10-1
   下一轮只做一件事，而且顺序反过来——第一件事就跑 `node tools/verify/parade-probe.mjs`（纯本地、几分钟出结果，别把它留到轮次后半段赌通道）。FAIL 项修到全绿 → STATE/LAST 一句话更新 → git add/commit/push。parade-probe 全 PASS 即 P24 第一块闭环，然后才开 P24 第二块（P24 不闭环不开 P22，05:36 规则不变）。
   别做的事：别再开新坑——上轮你去调了 headless 下 splash 被立即跳过（tools/verify/dbg-mk.mjs、dbg-splash-skip.mjs），那是 P24 第二块甚至更后面的问题，不是本轮的；那两个调试探针 taskmaster 已收编入库，你不用管，专注 parade-probe 这一件。
   如果流式中途又断了：让这轮自然结束（90s 后新轮再来），不重试、不加量、不开 subagent；把结论压成一句话写进 LOG.md（"本轮跑通 parade-probe，结果 X，未改动/已 push"），长篇复盘等通道好了再写。活着的轮次只做"本地能闭环"的事。
+
+- 2026-10-14 11:35 【taskmaster：parade-probe 超时系环境误报，非游戏 bug】taskmaster 本轮自测 parade-probe.mjs 在 line 79（waitForFunction 等 __mk.parade，60s）超时 FAIL，但随后隔离诊断（单页、无并发）：__mk.parade 存在、paradeMode=false/paradeDone=true（headless 下 15s 内巡游已走完）、零 page error —— 超时是因为本轮 verify.js 正并发跑着，双页软渲染把 rAF 轮询饿死了，属环境误报。教训：跑 parade-probe 时不要同时跑 verify.js（本机 8G 内存，双重 WebGL 页必卡）；10:28 条"第一件事跑 parade-probe"不变，单独跑即可。

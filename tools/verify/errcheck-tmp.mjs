@@ -1,0 +1,11 @@
+import { chromium } from 'playwright-core';
+const browser = await chromium.launch({ args: ['--no-sandbox','--disable-dev-shm-usage'] });
+const page = await browser.newPage();
+const errs = [];
+page.on('console', m => { if (m.type()==='error') errs.push('console: '+m.text()); });
+page.on('pageerror', e => errs.push('pageerror: '+e.message));
+await page.goto('http://127.0.0.1:8901/?track=classic', { waitUntil: 'domcontentloaded', timeout: 60000 });
+await page.waitForTimeout(8000);
+const has = await page.evaluate(() => ({ mk: !!window.__mk, parade: !!(window.__mk&&window.__mk.parade), intro: !!(window.__mk&&window.__mk.intro) }));
+console.log(JSON.stringify({ errs, has }));
+await browser.close();
