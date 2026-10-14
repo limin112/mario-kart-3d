@@ -348,3 +348,8 @@ M2 任务来源：ROADMAP（M2=P24 开场 + P22 小地图）+ GUIDANCE 2026-10-1
 
 - 2026-10-14 08:28 【taskmaster：paradeDone 漏声明已修复+验证通过，P24 第一块继续收尾】game/main.js 的 07:16 babysit bug（裸变量 paradeDone ReferenceError）本轮 Pi 已修：state 里声明了 paradeDone:false，三处读取全改 state.paradeDone，落位分支写 state.paradeDone=true。taskmaster 本轮 node --check 全过、verify.js ok:true 零 error（开场改动未阻驾驶）——旧 bug 闭环，GUIDANCE 07:16 条的"修一行→verify→commit+push"三步走了前两步。
   下一轮只做一件事：跑 `node tools/verify/parade-probe.mjs`（Pi 本轮已写好，8446 字节），把 FAIL 项修到全绿→ STATE/LAST 更新 → commit+push。别在这轮里开新功能（P24 不闭环不开 P22，05:36 规则不变）。
+
+- 2026-10-14 10:28 【taskmaster：P24 第一块连续 5 轮失败后的耐心拆解】状态：game/ 自 08:31 +08 起约 2 小时零落盘；loop-runs.log（UTC）01:37→02:23 连续 5 轮失败（4× exit=1 qwen 长流式 `Stream ended without finish_reason` + 1× exit=124 跑满 25 分钟超时）。这不是你代码的问题——病灶仍是本机→tailnet 隧道间歇劣化（小探针每次 200 必过、长生成随机死，23:27 已证实），别灰心，也别想"这轮多努力一点"熬过去。
+  下一轮只做一件事，而且顺序反过来——第一件事就跑 `node tools/verify/parade-probe.mjs`（纯本地、几分钟出结果，别把它留到轮次后半段赌通道）。FAIL 项修到全绿 → STATE/LAST 一句话更新 → git add/commit/push。parade-probe 全 PASS 即 P24 第一块闭环，然后才开 P24 第二块（P24 不闭环不开 P22，05:36 规则不变）。
+  别做的事：别再开新坑——上轮你去调了 headless 下 splash 被立即跳过（tools/verify/dbg-mk.mjs、dbg-splash-skip.mjs），那是 P24 第二块甚至更后面的问题，不是本轮的；那两个调试探针 taskmaster 已收编入库，你不用管，专注 parade-probe 这一件。
+  如果流式中途又断了：让这轮自然结束（90s 后新轮再来），不重试、不加量、不开 subagent；把结论压成一句话写进 LOG.md（"本轮跑通 parade-probe，结果 X，未改动/已 push"），长篇复盘等通道好了再写。活着的轮次只做"本地能闭环"的事。
