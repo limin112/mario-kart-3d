@@ -43,3 +43,4 @@
 - 阻塞：无
 - 下一步（细化）：P24 第一块 = 只改 main.js（+splash.js 如需）：删除旧零件爆炸 showcase 全段（intro/explode/exit 状态机与 showcaseScene），替换为发车格巡游镜头骨架——四车发车位排好→镜头侧前方低角度 2.5s dolly 滑过四车侧面（经过每辆车 playRev 渐起）→拉升绕到玩家车后接现有 3-2-1 倒计时机位（零跳变），总≤4s；验收 verify.js ok + 开场三帧截图四车+发车格+拱门同框
 - 最后更新：2026-10-14 06:55 +08（P24 前置闭环：facing-probe.mjs 17 项全 PASS 收编入库（车头朝向/出生方向/跟随镜头/玩家与 AI 行驶方向全对，零 error）；verify.js 收编 CDP 截图兜底后 ok:true 零 error、--drive 5 km/h。下一步 P24 第一块：删旧 showcase、写发车格巡游镜头骨架）
+- 2026-10-14 08:28 +08（taskmaster）：P24 第一块进展——旧 showcase 状态机整段删除（main.js -153 行）、发车格巡游镜头骨架 +133 行（四车发车位/dolly 侧滑/拉升到玩家车后/skipParade）；07:16 babysit 的 paradeDone ReferenceError 已修（state.paradeDone 声明+三处读取+落位置 true）；node --check 全过；verify.js ok:true 零 error、--drive 5 km/h；Qwen 健康（18182 200、finish_reason=length、thinking 模式预期内，连续失败 0）；commit 8f41b20 → main @ 6f19113f。下一步：跑通 parade-probe.mjs 后 P24 第一块闭环（P24 不闭环不开 P22）
