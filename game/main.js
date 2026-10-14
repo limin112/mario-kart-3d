@@ -3,7 +3,7 @@ import { Track } from './track.js';
 import { AIManager } from './ai.js';
 import { PlayerItemManager, AIItemManager } from './items.js';
 import { ParticleSystem } from './particles.js';
-import { createKart, resetKartForRace } from './kart.js';
+import { createKart } from './kart.js';
 import { AudioManager } from './audio.js';
 import { startSplash } from './splash.js';
 import { showRoundBanner } from './rounds.js';
@@ -29,6 +29,7 @@ const state = {
   // P24: 发车格巡游开场（替代旧 P7 零件爆炸展示）
   paradeMode: true,       // splash 播完到镜头落位车尾之间为 true
   paradeStartTime: 0,
+  paradeDone: false,      // 巡游结束（落位车尾/被跳过），之后进倒计时
 };
 
 // 全局游戏时间（基于 rAF 时间戳，秒），避免 performance.now() 在 headless 下不同步
@@ -125,7 +126,7 @@ const keys = { forward: false, backward: false, left: false, right: false };
 window.addEventListener('keydown', (e) => {
   // P24: 巡游开场期间任意键跳过（直接落位车尾进倒计时）；
   // P16: 开屏 splash 期间吞掉按键（交给 splash 自己的监听器）
-  if (state.paradeMode && !paradeDone) {
+  if (state.paradeMode && !state.paradeDone) {
     if (splashFinished) skipParade();
     return;
   }
@@ -151,7 +152,7 @@ window.addEventListener('keyup', (e) => {
 
 // 点击也可跳过巡游开场
 window.addEventListener('click', () => {
-  if (state.paradeMode && !paradeDone && splashFinished) {
+  if (state.paradeMode && !state.paradeDone && splashFinished) {
     skipParade();
   }
 });
@@ -515,9 +516,8 @@ function showResults() {
 // ============ 游戏循环 ============
 let lastTime = 0;
 let countdownDone = false;
-let showcaseDone = false;
 let countdownStarted = false;
-// P16: 开屏 splash 是否已播完（播完前展示舞台冻结在组装态，不开始动画）
+// P24: 开屏 splash 是否已播完（播完前画面冻结在巡游起始机位）
 let splashFinished = false;
 
 // 缓动函数
@@ -530,153 +530,21 @@ async function gameLoop(time) {
   lastTime = time;
   gameTime = time / 1000; // 全局游戏时间（秒），基于 rAF 时间戳
 
-  // P16: 开屏 splash 播放期间——只渲染冻结的展示背景，不推进展示时间线
-  if (state.showcaseMode && !showcaseDone && !splashFinished) {
-    renderer.render(showcaseScene, camera);
+  // P24: 开屏 splash 播放期间——渲染冻结的发车格画面（相机已摆在巡游起点）
+  if (!splashFinished) {
+    renderer.render(scene, camera);
     requestAnimationFrame(gameLoop);
     return;
   }
 
-  // P7: 展示模式
-  if (state.showcaseMode && !showcaseDone) {
-    const showcaseElapsed = gameTime - state.showcaseStartTime;
-    const phaseElapsed = gameTime - state.showcasePhaseStartTime;
-    
-    // 阶段状态机
-    if (state.showcasePhase === 'intro') {
-      // 0-0.6s: 标题淡入 + 相机从远处推进
-      const introProgress = THREE.MathUtils.clamp(phaseElapsed / 0.6, 0, 1);
-      const easedIntro = easeOutExpo(introProgress);
-      
-      // 标题淡入 + 从下方滑入
-      if (state.showcaseTitle) {
-        state.showcaseTitle.material.opacity = easedIntro;
-        state.showcaseTitle.position.y = 6 + (1 - easedIntro) * 2;
-        state.showcaseTitle.scale.x = 16 * easedIntro;
-        state.showcaseTitle.scale.y = 4 * easedIntro;
-      }
-      
-      // 相机从远距离推进
-      const startRadius = 30;
-      const endRadius = 18;
-      const camRadius = THREE.MathUtils.lerp(startRadius, endRadius, easedIntro);
-      const camHeight = 12 * (1 - easedIntro) + 8 * easedIntro;
-      state.showcaseCameraAngle += dt * 0.15;
-      camera.position.x = Math.sin(state.showcaseCameraAngle) * camRadius;
-      camera.position.z = Math.cos(state.showcaseCameraAngle) * camRadius;
-      camera.position.y = camHeight;
-      camera.lookAt(0, 1.5, 0);
-      
-      if (introProgress >= 1) {
-        state.showcasePhase = 'explode';
-        state.showcasePhaseStartTime = gameTime;
-        // P16 第二步：引擎轰鸣与爆炸峰值对齐——"看到车散开的同时听到转速起来"
-        // （playRev ~1.1s 两段扫频，恰好盖住 1.2s 爆炸段；未 unlock 时安全 no-op）
-        audio.playRev();
-      }
-    } else if (state.showcasePhase === 'explode') {
-      // 0.6-1.8s: 爆炸动画（组装态 -> 爆炸态），使用 easeOutCubic 平滑过渡
-      const phaseElapsed = gameTime - state.showcasePhaseStartTime;
-      const explodeProgress = THREE.MathUtils.clamp(phaseElapsed / 1.2, 0, 1);
-      const easedExplode = easeOutCubic(explodeProgress);
-      state.showcaseProgress = easedExplode;
-      
-      // 更新展示卡丁车动画
-      if (state.showcaseKart) {
-        updateShowcaseKart(state.showcaseKart, showcaseElapsed, dt, easedExplode);
-      }
-      
-      // 标题呼吸动画（爆炸阶段开始呼吸）
-      if (state.showcaseTitle) {
-        state.showcaseTitle.position.y = 6 + Math.sin(showcaseElapsed * 1.5) * 0.15;
-        state.showcaseTitle.material.opacity = 0.9 + Math.sin(showcaseElapsed * 2) * 0.1;
-      }
-      
-      // 相机继续环绕，缓慢推近
-      const camRadius = THREE.MathUtils.lerp(18, 14, easedExplode * 0.5);
-      const camHeight = 8;
-      state.showcaseCameraAngle += dt * 0.25;
-      camera.position.x = Math.sin(state.showcaseCameraAngle) * camRadius;
-      camera.position.z = Math.cos(state.showcaseCameraAngle) * camRadius;
-      // 晃动幅度随爆炸进度起振（×easedExplode），intro 末→explode 初相机 y 连续不跳变
-      camera.position.y = camHeight + Math.sin(showcaseElapsed * 0.5) * 0.5 * easedExplode;
-      camera.lookAt(0, 1.5, 0);
-      
-      if (explodeProgress >= 1) {
-        state.showcasePhase = 'exit';
-        state.showcasePhaseStartTime = gameTime;
-      }
-    } else if (state.showcasePhase === 'exit') {
-      // P16 第二步：退出过渡 0.2s（原 0.3→0.25→0.2，splash→GO 总时长压进 5~6s）
-      const phaseElapsed = gameTime - state.showcasePhaseStartTime;
-      const exitProgress = THREE.MathUtils.clamp(phaseElapsed / 0.2, 0, 1);
-      const easedExit = easeInOutCubic(exitProgress);
-      state.showcaseTransitionProgress = easedExit;
-      
-      // 标题淡出 + 缩放消失
-      if (state.showcaseTitle) {
-        state.showcaseTitle.material.opacity = 1 - easedExit;
-        state.showcaseTitle.scale.x = 16 * (1 - easedExit * 0.5);
-        state.showcaseTitle.scale.y = 4 * (1 - easedExit * 0.5);
-        state.showcaseTitle.position.y = 6 - easedExit * 2;
-      }
-      
-      // 相机拉远（起点 16/8 与 explode 末态衔接，不跳变）
-      const camRadius = THREE.MathUtils.lerp(16, 24, easedExit);
-      const camHeight = THREE.MathUtils.lerp(8, 12, easedExit);
-      state.showcaseCameraAngle += dt * 0.4;
-      camera.position.x = Math.sin(state.showcaseCameraAngle) * camRadius;
-      camera.position.z = Math.cos(state.showcaseCameraAngle) * camRadius;
-      // 沿用 explode 末态的晃动项（同相位同幅），explode 末→exit 初相机 y 连续
-      camera.position.y = camHeight + Math.sin(showcaseElapsed * 0.5) * 0.5;
-      camera.lookAt(0, 1.5, 0);
-      
-      if (exitProgress >= 1) {
-        state.showcaseMode = false;
-        if (state.showcaseTitle) state.showcaseTitle.visible = false;
-        // 清理展示场景（释放内存、避免残留）——完整清理包括 GridHelper 等非 Mesh 对象
-        showcaseScene.traverse(obj => {
-          if (obj.geometry) obj.geometry.dispose();
-          if (obj.material) {
-            if (Array.isArray(obj.material)) {
-              obj.material.forEach(m => m.dispose());
-            } else {
-              obj.material.dispose();
-            }
-          }
-          if (obj.material?.map) obj.material.map.dispose();
-        });
-        showcaseScene.clear();
-        showcaseDone = true;
-        // P16 第二步：倒计时开始前先把玩家车摆上发车格、相机贴到车尾——
-        // 倒计时画面即发车视角（AI 已在格），消除"倒计时看原点、GO 后相机飞越 50m"的衔接断裂
-        placeKartAtStartLine(playerKart, kartPhysics, track, 1);
-        snapCameraBehindKart();
-        // 启动倒计时
-        if (!countdownStarted) {
-          countdownStarted = true;
-          startCountdown().then(() => {
-            // P16 第二步：出生点放置已提前到倒计时之前，这里只启动比赛
-            state.running = true;
-            state.started = true;
-            announceRound('ROUND 1', false); // P18: 开赛播报
-            kartPhysics.currentLapStart = gameTime;
-            state.currentLapStart = kartPhysics.currentLapStart;
-            countdownDone = true;
-          });
-        }
-      }
-    }
-    
-    // 舞台装饰灯光呼吸
-    showcaseScene.children.forEach(child => {
-      if (child.userData.baseY !== undefined) {
-        child.position.y = child.userData.baseY + Math.sin(showcaseElapsed * 1.2 + child.userData.phase) * 0.3;
-        child.material.opacity = 0.2 + Math.sin(showcaseElapsed * 1.5 + child.userData.phase) * 0.15;
-      }
-    });
-    
-    renderer.render(showcaseScene, camera);
+  // P24: 发车格巡游开场（替代旧 P7 零件爆炸展示，旧整段已删除）——
+  // 低角度 dolly 滑过四车侧面（每辆车轰油渐起）→ 拉升绕到玩家车后，
+  // 落位即 3-2-1 倒计时跟随机位（零跳变）
+  if (state.paradeMode && !state.paradeDone) {
+    updateParade();
+    track.update(dt, gameTime);
+    particleSystem.update(dt, camera);
+    renderer.render(scene, camera);
     requestAnimationFrame(gameLoop);
     return;
   }
@@ -840,19 +708,128 @@ window.addEventListener('resize', () => {
   renderer.setSize(window.innerWidth, window.innerHeight);
 });
 
-// ============ P16: 开屏 splash ============
-// 流程：logo 大字开屏（splash.js 自绘 DOM，约 2.4s，可任意键/点击跳过）
-// → 播完/跳过后解冻 P7 展示舞台 → intro 末引擎轰油门（与爆炸对齐）→ 倒计时 → 比赛。
-function startShowcaseAfterSplash() {
-  const now = performance.now() / 1000;
-  state.showcaseStartTime = now;
-  state.showcasePhaseStartTime = now;
-  state.showcasePhase = 'intro';
-  splashFinished = true;
-  // P16 第二步：playRev 挪到 intro→explode 切换点（与爆炸视觉峰值对齐），此处不再轰
+// ============ P24: 发车格巡游开场 ============
+// 时间线（总 3.5s ≤ 4s）：
+//   0 → 2.5s   相机低角度（车头高度）从发车格侧前方 dolly 滑过四车侧面
+//              （easeInOut，经过每辆车 playRev 引擎渐起）
+//   2.5 → 3.5s 镜头上扬拉升绕到玩家车后，落位与倒计时跟随机位完全一致（零跳变）
+// splash 播完后任意键/点击 = skipParade 立即落位车尾进倒计时。
+const PARADE_DOLLY = 2.5;  // 滑过四车侧面（秒）
+const PARADE_RISE = 1.0;   // 拉升绕到车尾（秒）
+const PARADE_TOTAL = PARADE_DOLLY + PARADE_RISE;
+
+const parade = {
+  a: new THREE.Vector3(),        // dolly 起点（发车格前右方，低角度）
+  b: new THREE.Vector3(),        // dolly 终点（发车格前左方）
+  riseEnd: new THREE.Vector3(),  // 拉升终点 = 玩家车尾（与 snapCameraBehindKart 一致）
+  lookGrid: new THREE.Vector3(), // dolly 段 lookAt（发车格中心）
+  lookEnd: new THREE.Vector3(),  // 拉升末 lookAt（玩家车头前方）
+  revTimes: [0, 0.62, 1.24, 1.86], // 经过四辆车的轰油时刻
+  revCount: 0,
+  doneGameTime: -1,               // DEBUG: finishParade 时的 gameTime（探针测巡游时长用）
+};
+const paradeLookTmp = new THREE.Vector3();
+window.__mk.parade = parade; // DEBUG: parade-probe 读机位用
+
+function computeParadePath() {
+  const spawns = track.getSpawnPositions(); // 0=前左 1=前右(玩家) 2=后左 3=后右
+  const playerSpawn = spawns[1];
+  const r = playerSpawn.rotation;
+  const fwd = new THREE.Vector3(-Math.sin(r), 0, -Math.cos(r));  // 行进方向
+  const right = new THREE.Vector3(Math.cos(r), 0, -Math.sin(r)); // 车身右侧
+  const center = new THREE.Vector3();
+  for (const s of spawns) center.add(s.position);
+  center.multiplyScalar(1 / spawns.length);
+  // dolly 线：车群侧后方 3m、侧向 ±8m、离地 1.1m（车头高度低角度），从右滑到左；
+  // 侧后机位使画面同时包含四车 + 发车格 + 前方起点拱门（验收同框要求）
+  parade.a.copy(center).addScaledVector(fwd, -3).addScaledVector(right, -8);
+  parade.b.copy(center).addScaledVector(fwd, -3).addScaledVector(right, 8);
+  parade.a.y = center.y + 1.1;
+  parade.b.y = center.y + 1.1;
+  parade.lookGrid.copy(center);
+  parade.lookGrid.y += 0.8;
+  // 拉升终点与 snapCameraBehindKart 的落位公式完全一致 → 进倒计时零跳变
+  const pp = playerSpawn.position;
+  parade.riseEnd.set(
+    pp.x + Math.sin(r) * cameraOffset.z,
+    pp.y + cameraOffset.y,
+    pp.z + Math.cos(r) * cameraOffset.z
+  );
+  parade.lookEnd.set(pp.x - Math.sin(r) * 5, pp.y + 1, pp.z - Math.cos(r) * 5);
 }
 
-startSplash(startShowcaseAfterSplash);
+function startParade() {
+  splashFinished = true;
+  state.paradeStartTime = gameTime;
+  parade.revCount = 0;
+}
+
+function updateParade() {
+  const t = gameTime - state.paradeStartTime;
+  // 经过每辆车引擎渐起（audio 未 unlock 时安全 no-op）
+  while (parade.revCount < parade.revTimes.length && t >= parade.revTimes[parade.revCount]) {
+    audio.playRev();
+    parade.revCount++;
+  }
+  if (t < PARADE_DOLLY) {
+    const e = easeInOutCubic(THREE.MathUtils.clamp(t / PARADE_DOLLY, 0, 1));
+    camera.position.lerpVectors(parade.a, parade.b, e);
+    camera.lookAt(parade.lookGrid);
+  } else if (t < PARADE_TOTAL) {
+    const e = easeInOutCubic(THREE.MathUtils.clamp((t - PARADE_DOLLY) / PARADE_RISE, 0, 1));
+    camera.position.lerpVectors(parade.b, parade.riseEnd, e);
+    paradeLookTmp.lerpVectors(parade.lookGrid, parade.lookEnd, e);
+    camera.lookAt(paradeLookTmp);
+  } else {
+    finishParade();
+  }
+}
+
+function finishParade() {
+  state.paradeMode = false;
+  state.paradeDone = true;
+  parade.doneGameTime = gameTime; // DEBUG: parade-probe 断言巡游真实时长用
+  snapCameraBehindKart(); // 精确落位倒计时机位（零跳变）
+  if (!countdownStarted) {
+    countdownStarted = true;
+    startCountdown().then(() => {
+      state.running = true;
+      state.started = true;
+      announceRound('ROUND 1', false); // P18: 开赛播报
+      kartPhysics.currentLapStart = gameTime;
+      state.currentLapStart = kartPhysics.currentLapStart;
+      countdownDone = true;
+    });
+  }
+}
+
+function skipParade() {
+  if (state.paradeDone) return;
+  finishParade();
+}
+
+// DEBUG: parade-probe 白盒单测开场时间线用（同 window.__ai 先例，不影响任何逻辑）
+window.__mk.intro = {
+  parade, updateParade, finishParade, skipParade,
+  PARADE_DOLLY, PARADE_RISE, PARADE_TOTAL,
+  setSplashFinished: (v) => { splashFinished = v; },
+  isSplashFinished: () => splashFinished,
+  // 把巡游时间轴摆到第 t 秒（并重置 parade 标志），供探针逐时刻断言机位
+  setParadeTime: (t) => {
+    state.paradeMode = true;
+    state.paradeDone = false;
+    state.paradeStartTime = gameTime - t;
+  },
+};
+
+// P24: 启动即把玩家车摆上发车格（AI 车构造时已在格），相机冻结在巡游起始机位，
+// splash 期间渲染的就是发车格画面，splash 结束巡游开始时画面零跳变。
+placeKartAtStartLine(playerKart, kartPhysics, track, 1);
+computeParadePath();
+camera.position.copy(parade.a);
+camera.lookAt(parade.lookGrid);
+
+startSplash(startParade);
 
 // 启动
 requestAnimationFrame(gameLoop);
