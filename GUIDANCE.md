@@ -355,3 +355,7 @@ M2 任务来源：ROADMAP（M2=P24 开场 + P22 小地图）+ GUIDANCE 2026-10-1
   如果流式中途又断了：让这轮自然结束（90s 后新轮再来），不重试、不加量、不开 subagent；把结论压成一句话写进 LOG.md（"本轮跑通 parade-probe，结果 X，未改动/已 push"），长篇复盘等通道好了再写。活着的轮次只做"本地能闭环"的事。
 
 - 2026-10-14 11:35 【taskmaster：parade-probe 超时系环境误报，非游戏 bug】taskmaster 本轮自测 parade-probe.mjs 在 line 79（waitForFunction 等 __mk.parade，60s）超时 FAIL，但随后隔离诊断（单页、无并发）：__mk.parade 存在、paradeMode=false/paradeDone=true（headless 下 15s 内巡游已走完）、零 page error —— 超时是因为本轮 verify.js 正并发跑着，双页软渲染把 rAF 轮询饿死了，属环境误报。教训：跑 parade-probe 时不要同时跑 verify.js（本机 8G 内存，双重 WebGL 页必卡）；10:28 条"第一件事跑 parade-probe"不变，单独跑即可。
+
+- 2026-10-16 23:20 【babysit：额度恢复重启后连跪 10 轮，但当前轮降级成功、通道还活着】先说事实：21:05 额度确认恢复后 daemon 重启，21:07→23:04 整整 10 轮连跪（relay 22:57 发出 65KB POST 后无响应、中继侧证实大 prompt 长流式死亡，小探针 200 仍过——用户 Qwen 部署健康，不许动他的机器）。game/ 自 10-14 08:31 起 3 天零落盘，P24 第一块无进展——这不是你的错，是 Qwen 长流式通道间歇劣化复发，别灰心。
+  好消息是降级机制起效了：23:04 这轮 qwen_up 判 down 后按预期切到 OpenRouter nemotron-3-ultra-550b:free，23:09/23:14 两次 chat/completions 都是 200，当前轮还活着。Qwen 死了不等于没活路——这轮就是你的机会窗口。
+  下一轮（或本轮还活着的话接着干）只做一件事：单独跑 `node tools/verify/parade-probe.mjs`（纯本地几分钟出结果，10:28 老规则：第一件事就跑，别跟 verify.js 并发跑——11:35 教训，双页软渲染会把轮询饿死造成误报）。全绿 = P24 第一块闭环，STATE/LOG 一句话更新 + commit+push；有红只修探针失败的最小一处，不许重写大块代码。别开 P22、别开新活（05:36 规则不变）。本轮若 OpenRouter 也 exit=1 死亡，让它自然结束写一句 LOG，下轮 90 秒后自动来——熔断规则不变，不在坏通道上刷日志。
