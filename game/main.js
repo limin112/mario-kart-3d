@@ -726,6 +726,7 @@ const parade = {
   lookEnd: new THREE.Vector3(),  // 拉升末 lookAt（玩家车头前方）
   revTimes: [0, 0.62, 1.24, 1.86], // 经过四辆车的轰油时刻
   revCount: 0,
+  paused: false,                  // DEBUG: 探针摆位期间冻结巡游推进（默认 false，不影响游戏）
   doneGameTime: -1,               // DEBUG: finishParade 时的 gameTime（探针测巡游时长用）
 };
 const paradeLookTmp = new THREE.Vector3();
@@ -740,10 +741,12 @@ function computeParadePath() {
   const center = new THREE.Vector3();
   for (const s of spawns) center.add(s.position);
   center.multiplyScalar(1 / spawns.length);
-  // dolly 线：车群侧后方 3m、侧向 ±8m、离地 1.1m（车头高度低角度），从右滑到左；
-  // 侧后机位使画面同时包含四车 + 发车格 + 前方起点拱门（验收同框要求）
-  parade.a.copy(center).addScaledVector(fwd, -3).addScaledVector(right, -8);
-  parade.b.copy(center).addScaledVector(fwd, -3).addScaledVector(right, 8);
+  // dolly 线：车群侧后方 6.5m、侧向 ±8m、离地 1.1m（车头高度低角度），从右滑到左；
+  // 侧后机位使画面同时包含四车 + 发车格 + 前方起点拱门（验收同框要求）。
+  // 后退 6.5m 是算出来的：中段时后排车离相机横向中线≈ 32°，在水平半视场 45.7°（fov60×16:9）内；
+  // 旧值 3m 时后排车在相机侧后方 67°，中段帧只剩 2/4 车（parade-probe B5 实测）
+  parade.a.copy(center).addScaledVector(fwd, -6.5).addScaledVector(right, -8);
+  parade.b.copy(center).addScaledVector(fwd, -6.5).addScaledVector(right, 8);
   parade.a.y = center.y + 1.1;
   parade.b.y = center.y + 1.1;
   parade.lookGrid.copy(center);
@@ -764,7 +767,8 @@ function startParade() {
   parade.revCount = 0;
 }
 
-function updateParade() {
+function updateParade(force = false) {
+  if (parade.paused && !force) return; // 探针摆位期间主循环不得推进巡游
   const t = gameTime - state.paradeStartTime;
   // 经过每辆车引擎渐起（audio 未 unlock 时安全 no-op）
   while (parade.revCount < parade.revTimes.length && t >= parade.revTimes[parade.revCount]) {
@@ -810,8 +814,18 @@ function skipParade() {
 
 // DEBUG: parade-probe 白盒单测开场时间线用（同 window.__ai 先例，不影响任何逻辑）
 window.__mk.intro = {
-  parade, updateParade, finishParade, skipParade,
+  parade,
+  updateParade: () => updateParade(true),        // 探针强制推进一帧（无视暂停闩）
+  setParadePaused: (v) => { parade.paused = v; }, // 探针摆位+采样期间冻结主循环推进
+  finishParade, skipParade,
   PARADE_DOLLY, PARADE_RISE, PARADE_TOTAL,
+  // DEBUG: 探针观察倒计时内部状态与 gameTime（只读，不影响逻辑）
+  getCountdown: () => ({ active: countdownState.active, step: countdownState.step,
+    stepStartTime: countdownState.stepStartTime, hasResolve: !!countdownState.resolve,
+    display: countdownState.element ? countdownState.element.style.display : null }),
+  getGameTime: () => gameTime,
+  isCountdownDone: () => countdownDone,
+  isCountdownStarted: () => countdownStarted,
   setSplashFinished: (v) => { splashFinished = v; },
   isSplashFinished: () => splashFinished,
   // 把巡游时间轴摆到第 t 秒（并重置 parade 标志），供探针逐时刻断言机位
@@ -819,6 +833,28 @@ window.__mk.intro = {
     state.paradeMode = true;
     state.paradeDone = false;
     state.paradeStartTime = gameTime - t;
+  },
+  // 把世界复位到「splash 刚播完、巡游 t=0」：四车回发车格、相机回起始机位、
+  // 倒计时/比赛状态清空。headless 软渲染帧间隔秒级，实时时间线来不及采样，
+  // 探针需确定性复位（同 setParadeTime 先例，仅调试用，不影响任何游戏逻辑）。
+  resetIntro: () => {
+    splashFinished = true; // 跳过 splash（探针已先等 isSplashFinished，无迟到回调）
+    countdownDone = false;
+    countdownStarted = false;
+    countdownState.active = false;
+    countdownState.resolve = null; // 丢弃旧 Promise，防迟到的 .then 复活比赛
+    const cdEl = document.getElementById('countdown');
+    if (cdEl) cdEl.style.display = 'none';
+    state.paradeMode = true;
+    state.paradeDone = false;
+    placeKartAtStartLine(playerKart, kartPhysics, track, 1); // 内部已清 state.running/started 等
+    for (const k of aiManager.aiKarts) k.placeAtStartLine(k.index);
+    computeParadePath();
+    state.paradeStartTime = gameTime;
+    parade.revCount = 0;
+    parade.doneGameTime = -1;
+    camera.position.copy(parade.a);
+    camera.lookAt(parade.lookGrid);
   },
 };
 
