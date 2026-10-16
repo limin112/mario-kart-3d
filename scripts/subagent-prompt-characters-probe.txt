@@ -1,0 +1,35 @@
+你在 ~/workspace/mario-kart-3d/ 做一个 3D 马里奥赛车浏览器游戏的并行子任务（P23 新角色的验收探针）。
+
+先读：REQUIREMENTS.md、STATE.md、GUIDANCE.md 最后一条（2026-10-17 06:30 条，P23 需求原文）。
+
+【你的唯一任务】
+新建验收探针 tools/verify/characters-probe.mjs（Playwright + playwright-core，抄 tools/verify/minimap-probe.mjs 的骨架风格），验收 P23 新角色。主 agent 正在并行实现 game/kart.js 的角色系统，你【只写探针】，不要碰任何 game/ 文件。
+
+【主 agent 承诺的 API 契约（按此写探针，不要自己猜别的）】
+- game/kart.js 新增导出 `CHARACTERS`：对象，键 mario/peach/dino/bowser，每项含 name（中文名）、body（车身色 hex 数字）、suit、helmet、signature（'crown'|'saddle'|'shell'|null）。
+- `createKart(charOrColor, isPlayer)`：第一参兼容旧 hex 数字，新增接受字符串角色键；未知字符串按 mario。
+- 返回 group 的 `group.userData.character` = 角色键字符串（hex 旧调用 = 'mario'）；`group.userData.parts` 含特征部件：peach→parts.crown（皇冠）与 parts.dress；dino→parts.saddle（红背鞍）+ 驾驶员头部网格被改名 userData.partName='dinoHead'；bowser→parts.shell（尖刺壳）+ parts.mane（红鬃毛）+ 头部改名 partName='bowserHead'。特征部件都是 THREE.Mesh 且 mesh.name 非空（'crown'/'dress'/'saddle'/'shell'/'mane'）。
+- 四角色车身色两两不同：mario 红 0xff3333、peach 粉 0xff8fc8、dino 绿 0x33bb44、bowser 黑 0x1a1a1a。
+
+【探针必须断言（全部在 page.evaluate 里 dynamic import('/kart.js') 实现）】
+先起服务探活：curl -s -m 5 http://127.0.0.1:8901/ 返回 200 就别动；不通则 cd game && python3 -m http.server 8901 &（幂等，只起一次）。
+用 chromium 打开 http://127.0.0.1:8901/?track=classic（waitUntil:'commit'，软渲染慢，各 waitForFunction 超时给 240s，轮询间隔 ≥1s，绝不 200ms 高频轮询——会饿死 rAF 造成误报）。等 window.__mk && window.__mk.scene 出现。
+A. dynamic import('./kart.js')（URL 用 new URL('/kart.js', location.href)）成功，CHARACTERS 存在且四键齐全、每项有 name/body/signature。
+B. 对四角色各 createKart(key, false)：userData.character===key；userData.parts 里特征部件存在且是 Mesh（peach: crown+dress；dino: saddle；bowser: shell+mane；mario: 无 crown/saddle/shell）。
+C. 四角色车身色互不相同：取 parts.chassis.material.color.getHex()，两两不等，且 mario=0xff3333。
+D. 特征部件几何非退化：各特征 Mesh 的 geometry.boundingSphere.radius > 0.05。
+E. 旧 API 零回归：createKart(0x33ff33) 返回 group 的 userData.character==='mario'，parts.chassis/nose/wing 都在。
+F. 同屏视觉证据：把四辆车摆进 __mk.scene（沿玩家车前方横向一排，x 间隔 6m，y 贴 __mk.track.getSurfaceY 或直接 0.1，rotation.y 随意），等 2 帧 rAF，CDP Page.captureScreenshot 截图存 ../../shots/p23-review/01-four-characters.png（目录自建；page.screenshot 在本机常 60s 超时，直接用 CDP：const cdp = await page.context().newCDPSession(page); const {data} = await cdp.send('Page.captureScreenshot', {format:'png'})，base64 落盘）。断言文件 >20KB。测后把四辆车从 scene 移除。
+G. 全程零 console error / page error（page.on('console'/'pageerror') 收集，最后断言为空）。
+输出格式照抄 minimap-probe.mjs：每行 PASS/FAIL + 名字 + detail，末尾 ALL PASS 或失败计数退出码非 0。
+
+【文件白名单——铁律】
+你只能新建/修改这两个文件：
+1. tools/verify/characters-probe.mjs
+2. scripts/HANDOFF-characters-probe.md
+严禁碰：game/ 全部、tools/verify/ 其他文件、STATE.md、LOG.md、GUIDANCE.md、REQUIREMENTS.md、ROADMAP.md、scripts/ 其他文件。探针跑失败不要改游戏代码去迁就——把 FAIL 原样写进 HANDOFF。
+
+【完成标准与交接】
+- node --check tools/verify/characters-probe.mjs 通过。
+- 跑一次 node tools/verify/characters-probe.mjs（主 agent 可能还在写 kart.js——如果 import 失败或 CHARACTERS 未定义属预期，把当时的输出原样记进 HANDOFF 即可，不算你的失败；如果 10 分钟内 CHARACTERS 出现了就争取跑绿）。
+- 写 scripts/HANDOFF-characters-probe.md：做了什么、改了哪几个文件、探针运行输出原文、中文 2-3 行总结。

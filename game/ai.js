@@ -1,7 +1,10 @@
 import * as THREE from 'three';
+import { createKart, CHARACTERS } from './kart.js';
 
 /**
  * AI 对手模块：3 台 AI 卡丁车沿赛车线跑，有速度差异 + 简单 rubber-band
+ * P23：模型改用 kart.js 统一角车模型（createKart），三台 AI 分别开
+ * 公主/恐龙/酷霸王三辆特征车（替代旧绿/蓝/纯色块车）。
  */
 
 // AI 配置
@@ -23,166 +26,20 @@ const AI_CONFIG = {
   checkpointThreshold: 12,
 };
 
-/**
- * 创建 AI 卡丁车模型 (P6: 细化版)
- */
-function createAIKart(color, index) {
-  const group = new THREE.Group();
-
-  // 共享材质
-  const bodyMat = new THREE.MeshStandardMaterial({
-    color,
-    roughness: 0.5,
-    metalness: 0.3,
-  });
-  const darkMat = new THREE.MeshStandardMaterial({ color: 0x222, roughness: 0.4, metalness: 0.5 });
-  const tireMat = new THREE.MeshStandardMaterial({ color: 0x0a0a0a, roughness: 0.9, metalness: 0.1 });
-  const rimMat = new THREE.MeshStandardMaterial({ color: 0xaaaaaa, roughness: 0.3, metalness: 0.7 });
-
-  // --- 底盘 ---
-  const chassisGeo = new THREE.BoxGeometry(1.8, 0.4, 3.2);
-  const chassis = new THREE.Mesh(chassisGeo, bodyMat);
-  chassis.position.y = 0.5;
-  chassis.castShadow = true;
-  chassis.receiveShadow = true;
-  group.add(chassis);
-
-  // --- 前鼻 ---
-  const noseGeo = new THREE.CylinderGeometry(0.7, 0.9, 1.2, 12);
-  const nose = new THREE.Mesh(noseGeo, bodyMat);
-  nose.rotation.x = Math.PI / 2;
-  nose.position.set(0, 0.7, 1.4);
-  nose.scale.set(1, 0.8, 1);
-  nose.castShadow = true;
-  group.add(nose);
-
-  // --- 中部/座舱区 ---
-  const midGeo = new THREE.BoxGeometry(1.4, 0.6, 1.6);
-  const mid = new THREE.Mesh(midGeo, bodyMat);
-  mid.position.set(0, 1.1, 0.2);
-  mid.castShadow = true;
-  group.add(mid);
-
-  // --- 尾部 ---
-  const rearGeo = new THREE.BoxGeometry(1.5, 0.5, 1.0);
-  const rear = new THREE.Mesh(rearGeo, bodyMat);
-  rear.position.set(0, 1.0, -1.3);
-  rear.castShadow = true;
-  group.add(rear);
-
-  // --- 尾翼 ---
-  const wingGeo = new THREE.BoxGeometry(1.6, 0.08, 0.6);
-  const wing = new THREE.Mesh(wingGeo, darkMat);
-  wing.position.set(0, 1.6, -1.6);
-  wing.castShadow = true;
-  group.add(wing);
-  const strutGeo = new THREE.BoxGeometry(0.08, 0.5, 0.08);
-  for (const x of [-0.6, 0.6]) {
-    const strut = new THREE.Mesh(strutGeo, darkMat);
-    strut.position.set(x, 1.3, -1.5);
-    strut.castShadow = true;
-    group.add(strut);
-  }
-
-  // --- 挡风玻璃 ---
-  const glassMat = new THREE.MeshPhysicalMaterial({
-    color: 0x1a1a2e,
-    roughness: 0.1,
-    metalness: 0.0,
-    transmission: 0.6,
-    thickness: 0.5,
-    ior: 1.5,
-    transparent: true,
-    opacity: 0.7,
-  });
-  const glassGeo = new THREE.BoxGeometry(1.0, 0.5, 0.8);
-  const glass = new THREE.Mesh(glassGeo, glassMat);
-  glass.position.set(0, 1.55, 0.4);
-  glass.castShadow = true;
-  group.add(glass);
-
-  // --- AI 驾驶员 (简化版) ---
-  const driverGroup = new THREE.Group();
-  const helmetMat = new THREE.MeshStandardMaterial({ color, roughness: 0.4, metalness: 0.3 });
-  const suitMat = new THREE.MeshStandardMaterial({ color: 0x444, roughness: 0.7, metalness: 0.1 });
-
-  const helmetGeo = new THREE.SphereGeometry(0.32, 10, 8);
-  const helmet = new THREE.Mesh(helmetGeo, helmetMat);
-  helmet.position.set(0, 1.82, 0.3);
-  helmet.scale.set(1, 0.9, 1.1);
-  helmet.castShadow = true;
-  driverGroup.add(helmet);
-
-  const torsoGeo = new THREE.BoxGeometry(0.5, 0.45, 0.28);
-  const torso = new THREE.Mesh(torsoGeo, suitMat);
-  torso.position.set(0, 1.4, 0.2);
-  torso.castShadow = true;
-  driverGroup.add(torso);
-
-  driverGroup.position.y = 0;
-  group.add(driverGroup);
-
-  // --- 轮子：带轮毂 ---
-  const wheelPositions = [
-    [-1.15, 0.5, 1.25], [1.15, 0.5, 1.25],
-    [-1.15, 0.5, -1.25], [1.15, 0.5, -1.25],
-  ];
-  const wheels = [];
-  for (const [x, y, z] of wheelPositions) {
-    const wheelGroup = new THREE.Group();
-
-    const tireGeo = new THREE.CylinderGeometry(0.52, 0.52, 0.38, 16);
-    const tire = new THREE.Mesh(tireGeo, tireMat);
-    tire.rotation.z = Math.PI / 2;
-    tire.castShadow = true;
-    tire.receiveShadow = true;
-    wheelGroup.add(tire);
-
-    const rimGeo = new THREE.CylinderGeometry(0.32, 0.32, 0.06, 16);
-    const rim = new THREE.Mesh(rimGeo, rimMat);
-    rim.rotation.z = Math.PI / 2;
-    rim.position.set(0, 0, 0.19);
-    rim.castShadow = true;
-    wheelGroup.add(rim);
-
-    const rimInner = new THREE.Mesh(rimGeo, rimMat);
-    rimInner.rotation.z = Math.PI / 2;
-    rimInner.position.set(0, 0, -0.19);
-    rimInner.castShadow = true;
-    wheelGroup.add(rimInner);
-
-    const hubGeo = new THREE.CylinderGeometry(0.08, 0.08, 0.08, 12);
-    const hub = new THREE.Mesh(hubGeo, rimMat);
-    hub.rotation.z = Math.PI / 2;
-    wheelGroup.add(hub);
-
-    wheelGroup.position.set(x, y, z);
-    group.add(wheelGroup);
-    wheels.push({ group: wheelGroup, tire, rim });
-  }
-
-  // P24 前置（车头朝向统一）：同 kart.js createKart —— 逻辑前进方向 = 局部 -Z，
-  // 模型零件按 +Z 搭建，用 flip 容器转 180°，AI 车也不再视觉倒着开。
-  const facing = new THREE.Group();
-  facing.name = 'facingFix';
-  facing.rotation.y = Math.PI;
-  for (const child of [...group.children]) facing.add(child);
-  group.add(facing);
-
-  group.userData = { wheels, driverGroup, chassis, nose, mid, rear, wing };
-  return group;
-}
 
 /**
  * AI 控制器类
  */
 class AIKart {
-  constructor(scene, track, color, index, playerKartPhysics) {
+  constructor(scene, track, charKey, index, playerKartPhysics) {
     this.scene = scene;
     this.track = track;
     this.playerKartPhysics = playerKartPhysics; // 引用玩家物理，用于 rubber-band
     this.index = index;
-    this.color = color; // P22: 小地图按配色画圆点
+    // P23：角色键；P22 小地图圆点用 map 色（酷霸王纯黑车身在地图上改亮灰）
+    this.charKey = charKey;
+    const ch = CHARACTERS[charKey];
+    this.color = ch ? (ch.map ?? ch.body) : 0x33ff33;
     
     // 物理状态
     this.position = new THREE.Vector3();
@@ -206,8 +63,8 @@ class AIKart {
     this.turnSpeed = AI_CONFIG.turnSpeed + (Math.random() - 0.5) * 0.3;
     this.racingLineOffset = (Math.random() - 0.5) * 2; // -1 到 1 的偏移
     
-    // 创建模型
-    this.mesh = createAIKart(color, index);
+    // 创建模型（P23：复用 kart.js 角色车，含皇冠/背鞍/尖刺壳特征部件）
+    this.mesh = createKart(charKey, false);
     this.scene.add(this.mesh);
     
     // 初始位置：起点线后方按赛道方向错开
@@ -517,11 +374,11 @@ export class AIManager {
     this.aiKarts = [];
     this.rankings = [];
     
-    // AI 颜色
-    const colors = [0x33ff33, 0x3388ff, 0xffaa00]; // 绿、蓝、橙
+    // P23：三台 AI 角色车（公主/恐龙/酷霸王）
+    const chars = ['peach', 'dino', 'bowser'];
     
     for (let i = 0; i < AI_CONFIG.count; i++) {
-      const ai = new AIKart(scene, track, colors[i], i, playerKartPhysics);
+      const ai = new AIKart(scene, track, chars[i], i, playerKartPhysics);
       this.aiKarts.push(ai);
     }
     if (typeof window !== 'undefined') window.__ai = this; // DEBUG: 探针读 AI 数据用（同 main.js window.track 先例）

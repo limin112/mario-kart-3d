@@ -5,16 +5,39 @@ function easeOutCubic(t) { return 1 - Math.pow(1 - t, 3); }
 function easeInOutCubic(t) { return t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2; }
 
 /**
- * 创建卡丁车模型（P6 细化版 + P7 爆炸拆解支持）
- * 返回包含命名部件的 Group，便于展示模式下的分离动画
+ * P23 角色系统：四名车手（致敬马里奥赛车）
+ *  - body: 车身色；suit/helmet: 驾驶员服装/头部色
+ *  - signature: 特征部件类型（皇冠/背鞍/尖刺壳）
+ *  - map: 小地图圆点色（酷霸王车身纯黑，地图上改用亮灰保证可见）
  */
-export function createKart(color = 0xff3333, isPlayer = true) {
+export const CHARACTERS = {
+  mario:  { name: '马里奥', body: 0xff3333, suit: 0xcc2222, helmet: 0xff3333, signature: null,  map: 0xff3333 },
+  peach:  { name: '公主',   body: 0xff8fc8, suit: 0xffc0dd, helmet: 0xffe9f5, signature: 'crown', map: 0xff8fc8 },
+  dino:   { name: '恐龙',   body: 0x33bb44, suit: 0x2f9e3f, helmet: 0x69d44a, signature: 'saddle', map: 0x33bb44 },
+  bowser: { name: '酷霸王', body: 0x1a1a1a, suit: 0x9c4a1a, helmet: 0xf5a623, signature: 'shell', map: 0xb0b0b0 },
+};
+
+/**
+ * 创建卡丁车模型（P6 细化版 + P23 角色特征部件）
+ * @param {number|string} charOrColor - 角色键（CHARACTERS 键名）或旧版 hex 车身色
+ *        （hex 调用 = 旧 API 零回归，角色按 mario）
+ * @param {boolean} isPlayer
+ * 返回包含命名部件的 Group；group.userData.character = 角色键，
+ * group.userData.parts 含特征部件（peach: crown/dress；dino: saddle + dinoHead；
+ * bowser: shell/mane + bowserHead）
+ */
+export function createKart(charOrColor = 0xff3333, isPlayer = true) {
   const group = new THREE.Group();
   const parts = {};
 
+  // P23：角色解析（字符串=角色键，未知键/旧 hex 数字 → mario 配色语义 + 原色车身）
+  const charKey = (typeof charOrColor === 'string' && CHARACTERS[charOrColor]) ? charOrColor : 'mario';
+  const char = CHARACTERS[charKey];
+  const bodyColor = typeof charOrColor === 'number' ? charOrColor : char.body;
+
   // --- 材质 ---
   const bodyMat = new THREE.MeshStandardMaterial({
-    color,
+    color: bodyColor,
     roughness: 0.5,
     metalness: 0.3,
   });
@@ -35,8 +58,8 @@ export function createKart(color = 0xff3333, isPlayer = true) {
     opacity: 0.7,
   });
   const skinMat = new THREE.MeshStandardMaterial({ color: 0xffdbac, roughness: 0.8, metalness: 0.0 });
-  const suitMat = new THREE.MeshStandardMaterial({ color: 0xcc2222, roughness: 0.7, metalness: 0.1 });
-  const helmetMat = new THREE.MeshStandardMaterial({ color: 0xff3333, roughness: 0.4, metalness: 0.3 });
+  const suitMat = new THREE.MeshStandardMaterial({ color: char.suit, roughness: 0.7, metalness: 0.1 });
+  const helmetMat = new THREE.MeshStandardMaterial({ color: char.helmet, roughness: 0.4, metalness: 0.3 });
   const visorMat = new THREE.MeshStandardMaterial({ color: 0x000, roughness: 0.1, metalness: 0.9 });
   const tireMat = new THREE.MeshStandardMaterial({ color: 0x0a0a0a, roughness: 0.9, metalness: 0.1 });
   const rimMat = new THREE.MeshStandardMaterial({ color: 0xcccccc, roughness: 0.2, metalness: 0.8 });
@@ -115,6 +138,23 @@ export function createKart(color = 0xff3333, isPlayer = true) {
   driverGroup.add(helmet);
   parts.helmet = helmet;
 
+  // P23：驾驶员头部特征（恐龙=绿色长吻头、酷霸王=橙头+白骨尖角）
+  const boneMat = new THREE.MeshStandardMaterial({ color: 0xf2ecd8, roughness: 0.6, metalness: 0.1 });
+  if (charKey === 'dino') {
+    helmet.userData.partName = 'dinoHead';
+    helmet.scale.set(0.95, 0.95, 1.45); // 拉长成吻部
+  } else if (charKey === 'bowser') {
+    helmet.userData.partName = 'bowserHead';
+    const hornGeo = new THREE.ConeGeometry(0.07, 0.22, 6);
+    for (const hx of [-0.22, 0.22]) {
+      const horn = new THREE.Mesh(hornGeo, boneMat);
+      horn.position.set(hx, 0.3, -0.02);
+      horn.rotation.z = hx < 0 ? 0.35 : -0.35;
+      horn.castShadow = true;
+      helmet.add(horn); // 角作为头部子件，随头动
+    }
+  }
+
   const visorGeo = new THREE.BoxGeometry(0.35, 0.2, 0.05);
   const visor = new THREE.Mesh(visorGeo, visorMat);
   visor.position.set(0, 1.82, 0.55);
@@ -142,6 +182,72 @@ export function createKart(color = 0xff3333, isPlayer = true) {
   driverGroup.position.y = 0;
   group.add(driverGroup);
   parts.driverGroup = driverGroup;
+
+  // --- P23 角色特征部件（低多边形几何体拼，致敬马里奥赛车） ---
+  const goldMat = new THREE.MeshStandardMaterial({ color: 0xffd700, roughness: 0.25, metalness: 0.85 });
+  if (charKey === 'peach') {
+    // 公主：金色皇冠（冠环+4尖锥）戴在头盔上方 + 粉色蓬蓬裙摆
+    const crown = new THREE.Mesh(new THREE.CylinderGeometry(0.17, 0.19, 0.12, 8), goldMat);
+    crown.name = 'crown';
+    crown.position.set(0, 2.24, 0.3);
+    crown.castShadow = true;
+    const spikeGeo = new THREE.ConeGeometry(0.055, 0.14, 6);
+    for (const [sx, sz] of [[0, 0.16], [0.16, 0], [0, -0.16], [-0.16, 0]]) {
+      const spike = new THREE.Mesh(spikeGeo, goldMat);
+      spike.position.set(sx, 0.11, sz);
+      crown.add(spike);
+    }
+    driverGroup.add(crown);
+    parts.crown = crown;
+
+    const dress = new THREE.Mesh(new THREE.CylinderGeometry(0.28, 0.72, 0.62, 10), new THREE.MeshStandardMaterial({ color: 0xff7fb8, roughness: 0.75, metalness: 0.05 }));
+    dress.name = 'dress';
+    dress.position.set(0, 1.18, 0.25);
+    dress.castShadow = true;
+    driverGroup.add(dress);
+    parts.dress = dress;
+  } else if (charKey === 'dino') {
+    // 恐龙：红色背鞍（鞍座+前拱）放在驾驶员身后尾部
+    const saddle = new THREE.Mesh(new THREE.BoxGeometry(0.85, 0.32, 0.85), new THREE.MeshStandardMaterial({ color: 0xdd2222, roughness: 0.6, metalness: 0.1 }));
+    saddle.name = 'saddle';
+    saddle.position.set(0, 1.42, -1.25);
+    saddle.castShadow = true;
+    const arch = new THREE.Mesh(new THREE.TorusGeometry(0.3, 0.06, 6, 10, Math.PI), new THREE.MeshStandardMaterial({ color: 0xffe14d, roughness: 0.4, metalness: 0.3 }));
+    arch.position.set(0, 0.22, 0.42);
+    arch.rotation.y = Math.PI / 2;
+    saddle.add(arch);
+    group.add(saddle);
+    parts.saddle = saddle;
+  } else if (charKey === 'bowser') {
+    // 酷霸王：尖刺龟壳（墨绿壳+白骨尖锥）背在车后 + 红色鬃毛在头后
+    const shell = new THREE.Mesh(new THREE.SphereGeometry(0.72, 10, 8, 0, Math.PI * 2, 0, Math.PI / 2), new THREE.MeshStandardMaterial({ color: 0x2e6b1f, roughness: 0.6, metalness: 0.15 }));
+    shell.name = 'shell';
+    shell.scale.set(1, 0.62, 1);
+    shell.position.set(0, 1.28, -1.2);
+    shell.castShadow = true;
+    const shellSpikeGeo = new THREE.ConeGeometry(0.09, 0.26, 6);
+    for (const [sx, sz] of [[0, 0.42], [0, -0.42], [0.42, 0], [-0.42, 0]]) {
+      const s = new THREE.Mesh(shellSpikeGeo, boneMat);
+      s.position.set(sx, 0.34, sz);
+      shell.add(s);
+    }
+    group.add(shell);
+    parts.shell = shell;
+
+    const mane = new THREE.Mesh(new THREE.BoxGeometry(0.34, 0.55, 0.22), new THREE.MeshStandardMaterial({ color: 0xcc2200, roughness: 0.85, metalness: 0.0 }));
+    mane.name = 'mane';
+    mane.position.set(0, 1.82, -0.02);
+    mane.castShadow = true;
+    const tuftGeo = new THREE.ConeGeometry(0.07, 0.2, 6);
+    for (const [tx, ty] of [[-0.1, 0.3], [0.1, 0.32], [0, 0.36]]) {
+      const tuft = new THREE.Mesh(tuftGeo, mane.material);
+      tuft.position.set(tx, ty, 0);
+      tuft.rotation.x = 0.5;
+      mane.add(tuft);
+    }
+    driverGroup.add(mane);
+    parts.mane = mane;
+  }
 
   // --- 轮子 ---
   const wheelPositions = [
@@ -219,7 +325,7 @@ export function createKart(color = 0xff3333, isPlayer = true) {
   for (const child of [...group.children]) facing.add(child);
   group.add(facing);
 
-  group.userData = { wheels, parts, driverGroup, isPlayer, nose: parts.nose };
+  group.userData = { wheels, parts, driverGroup, isPlayer, nose: parts.nose, character: charKey };
   return group;
 }
 

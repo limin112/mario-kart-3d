@@ -107,7 +107,7 @@ const gridHelper = new THREE.GridHelper(500, 50, raceTheme.grid ?? 0x2d4a08, rac
 gridHelper.position.y = 0.01;
 scene.add(gridHelper);
 
-const playerKart = createKart(0x33ff33);
+const playerKart = createKart('mario'); // P23：玩家固定马里奥（红），AI 开公主/恐龙/酷霸王
 playerKart.position.set(0, 0, 5);
 scene.add(playerKart);
 

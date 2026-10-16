@@ -69,10 +69,11 @@ const ai = await page.evaluate(() => {
   // （旧判据假设描边环=纯色+alpha153；实测描边是黑色 0.6 叠在填充色上，
   //  环像素=暗化填充色 alpha255，所假设的中等 alpha 纯色环永远为 0，属探针错误。）
   const near = (r, g, b) => { let ring = 0, solid = 0; for (let i = 0; i < d.length; i += 4) { if (Math.abs(d[i] - r) < 40 && Math.abs(d[i + 1] - g) < 40 && Math.abs(d[i + 2] - b) < 40) { if (d[i + 3] > 240) solid++; else if (d[i + 3] > 100) ring++; } } return { ring, solid }; };
-  return { green: near(0x33, 0xff, 0x33), blue: near(0x33, 0x88, 0xff), orange: near(0xff, 0xaa, 0x00) };
+  // P23：AI 换角色车（公主粉/恐龙绿/酷霸王亮灰=黑车身的小地图可见色，见 kart.js CHARACTERS.map）
+  return { pink: near(0xff, 0x8f, 0xc8), green: near(0x33, 0xbb, 0x44), gray: near(0xb0, 0xb0, 0xb0) };
 });
 const dotOk = (c) => c.solid >= 8;
-check('4 AI 三色圆点均可见（实心+描边环）', dotOk(ai.green) && dotOk(ai.blue) && dotOk(ai.orange), JSON.stringify(ai));
+check('4 AI 三色圆点均可见（实心+描边环）', dotOk(ai.pink) && dotOk(ai.green) && dotOk(ai.gray), JSON.stringify(ai));
 
 // ---------- 5. 玩家箭头随位置移动 ----------
 async function arrowCentroid() {
