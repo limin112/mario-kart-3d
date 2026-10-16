@@ -182,6 +182,7 @@ class AIKart {
     this.track = track;
     this.playerKartPhysics = playerKartPhysics; // 引用玩家物理，用于 rubber-band
     this.index = index;
+    this.color = color; // P22: 小地图按配色画圆点
     
     // 物理状态
     this.position = new THREE.Vector3();

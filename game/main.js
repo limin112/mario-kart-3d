@@ -9,6 +9,7 @@ import { startSplash } from './splash.js';
 import { showRoundBanner } from './rounds.js';
 import { getTheme } from './themes.js';
 import { TRACK_LAYOUTS } from './trackdefs.js';
+import { initMinimap, updateMinimap } from './minimap.js';
 
 // ============ 全局状态 ============
 const state = {
@@ -181,6 +182,11 @@ window.kartPhysics = kartPhysics; // DEBUG
 
 // ============ AI 对手 (P4) ============
 const aiManager = new AIManager(scene, track, kartPhysics);
+
+// P22: 右下角小地图（赛道轮廓 + 玩家白箭头 + AI 配色圆点）
+initMinimap(track);
+window.__mk.updateMinimap = updateMinimap; // DEBUG: 探针手动重绘用
+window.__mk.aiKarts = aiManager.aiKarts; // DEBUG: minimap-probe 读 AI 圆点数据用
 
 // ============ 道具系统 (P5) ============
 let playerItemManager = null;
@@ -529,6 +535,9 @@ async function gameLoop(time) {
   const dt = Math.min((time - lastTime) / 1000, 1 / 30); // 限制最大 dt
   lastTime = time;
   gameTime = time / 1000; // 全局游戏时间（秒），基于 rAF 时间戳
+
+  // P22: 小地图每帧重绘（splash 遮罩期间也被盖住，画了无害；140 点描边开销可忽略）
+  updateMinimap(kartPhysics, aiManager.aiKarts);
 
   // P24: 开屏 splash 播放期间——渲染冻结的发车格画面（相机已摆在巡游起点）
   if (!splashFinished) {
