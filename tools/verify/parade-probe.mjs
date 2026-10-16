@@ -148,7 +148,9 @@ check('C2 衔接帧至少 3 车在屏内（车尾机位视野）', joinInFrame >
 check('C3 衔接帧起点拱门在屏内（发车视线）', inFrame(s2b.ndcGate), s2b.ndcGate.join(','));
 const shotJoin = await shot('parade-p24-3-join.png');
 check('C4 倒计时衔接帧截图存证', !!shotJoin, shotJoin || '');
-await page.waitForFunction(() => window.__mk.state.running === true, null, { timeout: 30000, polling: 200 });
+// headless 软渲染单帧 ~9s，倒计时需 1~2 帧；200ms 高频轮询的 evaluate 会挤占
+// rAF 任务队列饿死渲染循环（GUIDANCE 11:35 同因），故 polling 放宽到 1s、超时 120s
+await page.waitForFunction(() => window.__mk.state.running === true, null, { timeout: 120000, polling: 1000 });
 const s3 = await sample();
 check('C5 倒计时结束比赛开始（state.running）', s3.state.running === true && s3.state.started === true);
 
@@ -164,13 +166,12 @@ await drive(1.0); // 复位后摆到 dolly 中段
 const sPre = await sample();
 check('E0 按键前巡游进行中（paradeDone=false）', sPre.state.paradeDone === false);
 await page.keyboard.press('Space'); // 任意键跳过巡游
-await page.waitForFunction(() => window.__mk.state.paradeDone === true, null, { timeout: 15000, polling: 200 });
+await page.waitForFunction(() => window.__mk.state.paradeDone === true, null, { timeout: 60000, polling: 1000 });
 const s4 = await sample();
 const snapPos4 = [s4.player[0] + Math.sin(s4.playerRot) * 12, s4.player[1] + 6, s4.player[2] + Math.cos(s4.playerRot) * 12];
 check('E1 按键跳过后立即落位车尾', dist(s4.cam, snapPos4) < 0.3, `d=${dist(s4.cam, snapPos4).toFixed(3)}m`);
-await page.waitForFunction(() => window.__mk.state.running === true, null, { timeout: 30000, polling: 200 });
+await page.waitForFunction(() => window.__mk.state.running === true, null, { timeout: 120000, polling: 1000 });
 check('E2 跳过后倒计时照常进比赛', (await sample()).state.running === true);
-
 // ---------- F. 零 error ----------
 check('F1 全程零 console/page error', errors.length === 0, errors.slice(0, 3).join(' | '));
 
