@@ -1,5 +1,6 @@
 # STATE — 项目状态（Pi 每轮迭代结束时更新）
 
+- 最后更新：2026-10-17 21:30 +08（taskmaster：夜轮运行中但 20:15 后 11 连跪 exit=1（qwen），game/ 2 小时零改动，通道病延续；GUIDANCE 21:30 追加 P25 第一刀拆小（P25-①a 曲率表先行、<120 行 10 分钟闭环）；Qwen 健康（18182 200、finish_reason=stop、thinking 模式预期内、连续失败 0）；8901 初次即 200；verify.js ok:true 零 error --drive 5 km/h；push 本轮 LOG/STATE/GUIDANCE）
 - 最后更新：2026-10-17 20:15 +08（Pi：P17补 角色选择界面探针验收闭环——charselect-probe 12 项 ALL PASS、PIL 像素实证选人屏真实渲染、verify.js ok:true 零 error --drive 5km/h；M3 里程碑（P23+P17补）全部完成，待目视复核关门；commit+push）
 - 最后更新：2026-10-17 19:33 +08（taskmaster：日间停机，Pi/game/ 零动静；GUIDANCE 07:17 P17 条仍有效，今晚 20:00 夜轮继续，不重复布置；Qwen 健康（18182 200、3.2s、finish_reason=length 截断预期、content null 但 reasoning 101 字=thinking 模式预期内、连续失败 0）；8901 初次即 200；verify.js ok:true 零 error --drive 5km/h（screenshotFallback=2 CDP 直抓已知环境行为）；push 本轮 LOG/STATE）
 - 最后更新：2026-10-17 18:28 +08（taskmaster：日间停机，Pi/game/ 零动静；GUIDANCE 07:17 P17 条仍有效，今晚 20:00 夜轮继续，不重复布置；Qwen 健康（18182 200、3.2s、finish_reason=length 截断预期、content null 但 reasoning 100 字=thinking 模式预期内、连续失败 0）；8901 初死重拉→200；verify.js ok:true 零 error --drive 5km/h（第一遍空参误跑属调用参数错误）；push 本轮 LOG/STATE）
