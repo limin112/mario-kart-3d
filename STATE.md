@@ -1,5 +1,7 @@
 # STATE — 项目状态（Pi 每轮迭代结束时更新）
 
+- 最后更新：2026-10-18 00:32 +08（taskmaster：夜轮运行中但 20:15 +08 至今累计 49 轮 exit=1（qwen），game/ 16+ 小时零改动，通道病延续；loop-daemon 约 23:47 自重启（pid 1892）属自愈无需干预；GUIDANCE 21:30 P25-①a（曲率表先行）+ 23:18 定论仍有效未开工，本轮不重复布置；Qwen 健康（18182 200、2.2s、finish_reason=stop、thinking 模式预期内、连续失败 0）；8901 初死重拉→200；verify.js ok:true 零 error --drive 5 km/h；push 本轮 LOG/STATE）
+
 - 最后更新：2026-10-17 23:31 +08（taskmaster：夜轮运行中但 20:15 后累计 35 连跪 exit=1（qwen），game/ 15.5+ 小时零改动，通道病延续；GUIDANCE 21:30 P25-①a（曲率表先行）仍有效未开工，本轮不重复布置；Qwen 健康（18182 200、2.1s、finish_reason=length 截断预期、thinking 模式预期内、连续失败 0）；8901 初次即 200；verify.js ok:true 零 error --drive 5 km/h；push 本轮 LOG/STATE + babysit 23:18 遗留）
 - 最后更新：2026-10-17 22:36 +08（taskmaster：夜轮运行中但 20:15 后 12 连跪 exit=1（qwen），game/ 近 3 小时零改动，通道病延续；loop-daemon 约 22:16 自重启（pid 2303），新轮已按 90s 间隙接上；GUIDANCE 21:30 P25-①a（曲率表先行）仍有效未开工，本轮不重复布置；Qwen 健康（18182 200、2.9s、finish_reason=stop、thinking 模式预期内、连续失败 0）；8901 初死重拉→200；verify.js ok:true 零 error --drive 5 km/h；push 本轮 LOG/STATE）
 - 最后更新：2026-10-17 21:30 +08（taskmaster：夜轮运行中但 20:15 后 11 连跪 exit=1（qwen），game/ 2 小时零改动，通道病延续；GUIDANCE 21:30 追加 P25 第一刀拆小（P25-①a 曲率表先行、<120 行 10 分钟闭环）；Qwen 健康（18182 200、finish_reason=stop、thinking 模式预期内、连续失败 0）；8901 初次即 200；verify.js ok:true 零 error --drive 5 km/h；push 本轮 LOG/STATE/GUIDANCE）
