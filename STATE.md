@@ -1,5 +1,6 @@
 # STATE — 项目状态（Pi 每轮迭代结束时更新）
 
+- 最后更新：2026-10-17 16:32 +08（taskmaster：日间停机，Pi/game/ 零动静；GUIDANCE 07:17 P17 条仍有效，今晚 20:00 夜轮继续，不重复布置；Qwen 健康（18182 200、3.0s、finish_reason=stop 正常回复、thinking 模式预期内、连续失败 0）；8901 初次即 200；verify.js ok:true 零 error --drive 5km/h；补交 15:39 轮遗留未提交内容，一并 push）
 - 当前阶段：M3 角色收官；P23 已正式闭环（babysit 07:17 目视复核四车同框通过，门闩解除）；本轮产出 P23 目视复核包加强证据（每角色特写×4+四车近距合影+像素实证，ALL PASS，工具已由 taskmaster 收编 d14d773）；下一步 P17补 选人屏（taskmaster 07:27：由下一轮接）
 - 已完成：
   - P23 目视复核包（本轮，辅助监工目视验收；P23 已于 07:17 凭 01-four-characters.png 先行闭环）— 新建 tools/verify/characters-review-shot.mjs（真实时间线跑到 running 后运行时摆位：隐藏玩家/AI 实车，把角色车按相机俯角解算距离摆到视轴上正对镜头，CDP 直抓，拍完还原，零游戏代码改动）+ characters-review-report.py（PIL 特征色实证）；产出 shots/p23-review/02~05 四张角色特写 + 06 四车近距合影；脚本 8 项 ALL PASS（五图 >20KB、零 error），PIL 全帧+中心区双验证：马里奥红 505/公主粉 505+皇冠金 11/恐龙绿 276+背鞍红 414/酷霸王橙盔 67+骨锥 192/合影四色齐全，特征部件真实渲染且位于画面中央；verify.js ok:true 零 console/page error、--drive 5 km/h（红线保持）
@@ -58,3 +59,4 @@
 - 最后更新：2026-10-17 06:30 +08（taskmaster：P22 目视复核通过正式闭环，GUIDANCE 追加 06:30 条布置 P23 新角色；Qwen 健康（18182 200、finish_reason=stop、thinking 模式预期内、连续失败 0）；8901 200；收编 minimap-review 复核包工具×2、清理 dbg-stuck-tmp；commit+push）
 - 最后更新：2026-10-17 05:52 +08（Pi：P22 小地图收编断尾+修两处（stroke→fill 白芯、探针圆点判据），minimap-probe 9 项 ALL PASS、verify.js ok:true 零 error --drive 5km/h、PIL 像素实证截图小地图真实渲染；清理 10 个 dbg-mm 临时探针；commit+push）
 - 2026-10-14 08:28 +08（taskmaster）：P24 第一块进展——旧 showcase 状态机整段删除（main.js -153 行）、发车格巡游镜头骨架 +133 行（四车发车位/dolly 侧滑/拉升到玩家车后/skipParade）；07:16 babysit 的 paradeDone ReferenceError 已修（state.paradeDone 声明+三处读取+落位置 true）；node --check 全过；verify.js ok:true 零 error、--drive 5 km/h；Qwen 健康（18182 200、finish_reason=length、thinking 模式预期内，连续失败 0）；commit 8f41b20 → main @ 6f19113f。下一步：跑通 parade-probe.mjs 后 P24 第一块闭环（P24 不闭环不开 P22）
+- 最后更新：2026-10-17 15:39 +08（taskmaster：日间停机，Pi/game/ 零动静；GUIDANCE 07:17 P17 条仍有效，今晚 20:00 夜轮继续，不重复布置；Qwen 健康（18182 200、1.4s、finish_reason=stop 正常回复、thinking 模式预期内、连续失败 0）；8901 中途已死→start_server.sh 重拉 200；verify.js ok:true 零 error --drive 5km/h；remote main tree == 本地 HEAD tree 无需 push）
