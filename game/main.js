@@ -3,9 +3,10 @@ import { Track } from './track.js';
 import { AIManager } from './ai.js';
 import { PlayerItemManager, AIItemManager } from './items.js';
 import { ParticleSystem } from './particles.js';
-import { createKart } from './kart.js';
+import { createKart, CHARACTERS } from './kart.js';
 import { AudioManager } from './audio.js';
 import { startSplash } from './splash.js';
+import { showCharSelect } from './charselect.js';
 import { showRoundBanner } from './rounds.js';
 import { getTheme } from './themes.js';
 import { TRACK_LAYOUTS } from './trackdefs.js';
@@ -867,6 +868,45 @@ window.__mk.intro = {
   },
 };
 
+// ============ P17补: 角色选择 → 换车 ============
+// 玩家换成所选角色车（保留 Group 引用不变，只换 children/userData，
+// 所有 playerKart 引用——物理同步/相机/resetIntro/__mk 钩子——零改动即生效）；
+// 被占角色的 AI 改开让出的马里奥车。key==='mario' 时默认阵容不变，零操作。
+function disposeKartGroup(group) {
+  group.traverse((o) => {
+    if (o.isMesh) {
+      if (o.geometry) o.geometry.dispose();
+      const mats = Array.isArray(o.material) ? o.material : [o.material];
+      mats.forEach((m) => m && m.dispose && m.dispose());
+    }
+  });
+}
+
+function applyCharacterSelection(key) {
+  if (!CHARACTERS[key]) return;
+  if (key === 'mario') return; // 默认阵容：玩家马里奥，AI 公主/恐龙/酷霸王
+  // 玩家换车（Group 身份保留）
+  const fresh = createKart(key, true);
+  const oldChildren = playerKart.children.slice();
+  oldChildren.forEach((c) => { playerKart.remove(c); disposeKartGroup(c); });
+  while (fresh.children.length) playerKart.add(fresh.children[0]);
+  playerKart.userData = fresh.userData;
+  // 被占角色的 AI 改开让出的马里奥车（ai.mesh 全部经 this.mesh 活引用访问，可整体替换）
+  const ai = aiManager.aiKarts.find((a) => a.charKey === key);
+  if (ai) {
+    scene.remove(ai.mesh);
+    disposeKartGroup(ai.mesh);
+    const m = createKart('mario', false);
+    m.position.copy(ai.position);
+    m.rotation.y = ai.rotation;
+    scene.add(m);
+    ai.mesh = m;
+    ai.charKey = 'mario';
+    ai.color = CHARACTERS.mario.map; // 小地图圆点色跟随
+  }
+}
+window.__mk.applyCharacterSelection = applyCharacterSelection; // DEBUG: 探针白盒换车用（同 __ai 先例）
+
 // P24: 启动即把玩家车摆上发车格（AI 车构造时已在格），相机冻结在巡游起始机位，
 // splash 期间渲染的就是发车格画面，splash 结束巡游开始时画面零跳变。
 placeKartAtStartLine(playerKart, kartPhysics, track, 1);
@@ -874,7 +914,23 @@ computeParadePath();
 camera.position.copy(parade.a);
 camera.lookAt(parade.lookGrid);
 
-startSplash(startParade);
+// P17补: splash → 选人屏（左右键/滑动/点击，3s 无操作自动确认默认马里奥，
+// headless 零输入不死锁）→ 换车 → 发车格巡游。选人期间 splashFinished 仍为 false，
+// 画面冻结在巡游起始机位，main.js 按键处理的巡游分支天然吞掉驾驶键。
+startSplash(() => {
+  showCharSelect({
+    characters: ['mario', 'peach', 'dino', 'bowser'].map((k) => ({
+      key: k,
+      name: CHARACTERS[k].name,
+      color: CHARACTERS[k].body,
+      signature: CHARACTERS[k].signature,
+    })),
+    defaultKey: 'mario',
+  }, (key) => {
+    applyCharacterSelection(key);
+    startParade();
+  });
+});
 
 // 启动
 requestAnimationFrame(gameLoop);
